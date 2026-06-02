@@ -768,6 +768,7 @@ run(function()
 		BlockController = require(replicatedStorage['rbxts_include']['node_modules']['@easy-games']['block-engine'].out).BlockEngine,
 		BlockEngine = require(lplr.PlayerScripts.TS.lib['block-engine']['client-block-engine']).ClientBlockEngine,
 		BlockPlacer = require(replicatedStorage['rbxts_include']['node_modules']['@easy-games']['block-engine'].out.client.placement['block-placer']).BlockPlacer,
+		BlockSelector = require(replicatedStorage.rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector']).BlockSelector,
 		BowConstantsTable = debug.getupvalue(Knit.Controllers.ProjectileController.enableBeam, 8),
 		ClickHold = require(replicatedStorage['rbxts_include']['node_modules']['@easy-games']['game-core'].out.client.ui.lib.util['click-hold']).ClickHold,
 		Client = Client,
@@ -2029,7 +2030,7 @@ run(function()
     local old
     
     vape.Categories.Combat:CreateModule({
-        Name = 'NoClickDelay',
+        Name = 'No Click Delay',
         Function = function(callback)
             if callback then
                 old = bedwars.SwordController.isClickingTooFast
@@ -3292,7 +3293,7 @@ run(function()
                 raknet.add_send_hook(hook)
                 if entitylib.isAlive and store.matchState ~= 0 then
                     entitylib.character.Humanoid.Health = 0
-                    notif('Desync', 'Resyncing, If you flag you have to reset!', 8, 'info')
+                    notif('Desync', 'Resyncing, If you flag multiple times, you have to retoggle!', 8, 'info')
                 end
             elseif hook then
                 raknet.remove_send_hook(hook)
@@ -9608,6 +9609,7 @@ end)
 run(function()
     local ShopTierBypass
     local tiered, nexttier = {}, {}
+    local old
     
     ShopTierBypass = vape.Categories.Utility:CreateModule({
         Name = 'Shop Tier Bypass',
@@ -9621,8 +9623,22 @@ run(function()
                         v.nextTier = nil
                         v.tiered = nil
                     end
+    
+                    old = bedwars.Shop.getShop
+    				bedwars.Shop.getShop = function(...)
+    					local res = {old(...)}
+    					for i, v in res[1] do
+    						v.nextTier = nil
+    						v.tiered = nil
+    					end
+    					return unpack(res)
+    				end
                 end
             else
+                if old then
+                    bedwars.Shop.getShop = old
+                    old = nil
+                end
                 for i, v in tiered do
                     i.tiered = v
                 end
@@ -12767,7 +12783,7 @@ run(function()
     
                 local beds = collection('bed', Breaker)
                 local luckyblock = collection('LuckyBlock', Breaker)
-                local ironores = collection('iron-ore', Breaker)
+                local ironores = collection('iron_ore_mesh_block', Breaker)
                 local teslas = collection('tesla-trap', Breaker, function(tab, obj)
     				task.delay(0.1, function()
     					local player = playersService:GetPlayerByUserId(obj:GetAttribute('PlacedByUserId'))
@@ -15688,8 +15704,13 @@ run(function()
     })
     Value = FOV:CreateSlider({
         Name = 'FOV',
-        Min = 30,
-        Max = 120
+        Min = 70,
+        Max = 360,
+        Function = function(val)
+            if FOV.Enabled then
+                bedwars.FovController:setFOV(val)
+            end
+        end
     })
 end)
 
