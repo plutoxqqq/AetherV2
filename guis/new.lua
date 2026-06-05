@@ -337,7 +337,11 @@ local function downloadFile(path, func)
 end
 
 getcustomasset = assetfunction and function(path)
-	return downloadFile(path, assetfunction)
+	local suc, res = pcall(downloadFile, path, assetfunction)
+	if suc then
+		return res
+	end
+	return getcustomassets[path] or ''
 end or function(path)
 	return getcustomassets[path] or ''
 end

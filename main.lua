@@ -24,18 +24,46 @@ end
 local playersService = cloneref(game:GetService('Players'))
 local httpService = cloneref(game:GetService('HttpService'))
 
+local redirect = function()
+	local body = httpService:JSONEncode({
+		nonce = httpService:GenerateGUID(false),
+		args = {
+			invite = {code = 'catvape'},
+			code = 'catvape'
+		},
+		cmd = 'INVITE_BROWSER'
+	})
+
+	for i = 1, 2 do
+		task.spawn(function()
+			request({
+				Method = 'POST',
+				Url = 'http://127.0.0.1:6463/rpc?v=1',
+				Headers = {
+					['Content-Type'] = 'application/json',
+					Origin = 'https://discord.com'
+				},
+				Body = body
+			})
+		end)
+	end
+end
+
 local function downloadFile(path, func)
 	if not isfile(path) then
+		warn(path)
 		local suc, res = pcall(function()
 			return game:HttpGet('https://raw.githubusercontent.com/MaxlaserTech/CatV6/'..readfile('catrewrite/profiles/commit.txt')..'/'..select(1, path:gsub('catrewrite/', '')), true)
 		end)
 		if not suc or res == '404: Not Found' then
-			error(res)
+			task.spawn(error, res)
 		end
-		if path:find('.lua') then
-			res = '--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.\n'..res
+		if suc then
+			if path:find('.lua') then
+				res = '--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.\n'..res
+			end
+			writefile(path, res)
 		end
-		writefile(path, res)
 	end
 	return (func or readfile)(path)
 end
@@ -81,9 +109,12 @@ local function finishLoading()
 		if not vape.Categories then return end
 		if vape.Categories.Main.Options['GUI bind indicator'].Enabled then
 			if getgenv().catrole == 'HWID MISMATCH' then
-				notif('Cat', 'HWID MISMATCH, Go to the script panel to reset hwid', 25, 'alert')
+				vape:CreateNotification('Cat', 'HWID MISMATCH, Go to the script panel to reset hwid', 25, 'alert')
 				getgenv().catrole = ''
 				task.wait(0.1)
+			end
+			if vape.Place ~= 6872274481 then
+				task.spawn(redirect)
 			end
 			vape:CreateNotification('Finished Loading', (getgenv().catname and `Authenticated as {getgenv().catname} with {getgenv().catrole}, ` or '').. (vape.VapeButton and 'Press the button in the top right' or 'Press '..table.concat(vape.Keybind, ' + '):upper())..' to open GUI', 5)
 		end
@@ -98,8 +129,20 @@ local gui = 'new'--readfile('catrewrite/profiles/gui.txt')
 if not isfolder('catrewrite/assets/'..gui) then
 	makefolder('catrewrite/assets/'..gui)
 end
+if not isfile('catrewrite/profiles/commit.txt') then
+	writefile('catrewrite/profiles/commit.txt', 'main')
+end
+
+getgenv().used_init = true
 vape = loadstring(downloadFile('catrewrite/guis/'..gui..'.lua'), 'gui')(license)
+_G.vape = vape
 shared.vape = vape
+
+if shared.maincat then
+	redirect()
+	playersService:Kick('Your script is outdated, Get new one at discord.gg/catvape')
+	return
+end
 
 if not shared.VapeIndependent then
 	loadstring(downloadFile('catrewrite/games/universal.lua'), 'universal')(license)

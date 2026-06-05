@@ -4,6 +4,8 @@
 ]]
 local module = {}
 local eps = 1e-9
+local cloneref = cloneref or function(ref) return ref end
+local tweenService = cloneref(game:GetService('TweenService'))
 local function isZero(d)
 	return (d > -eps and d < eps)
 end
@@ -202,10 +204,10 @@ function module.SpawnTracer(from, to, custom)
     t.Size = vector.create(custom.Thick, custom.Thick, distance)
     t.CFrame = CFrame.lookAt(from, to) * CFrame.new(0, 0, -distance / 2)
     t.Material = custom.Material
-	t.Transparency = custom.Opacity
+	t.Transparency = custom.Opacity or 0
 
    	if custom.Fade then
-		game:GetService('TweenService'):Create(t, TweenInfo.new(custom.Lifetime), {
+		tweenService:Create(t, TweenInfo.new(custom.Lifetime), {
 			Transparency = 1
 		}):Play()
 	end
