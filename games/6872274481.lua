@@ -7858,7 +7858,7 @@ run(function()
     local Folder = Instance.new('Folder')
     Folder.Parent = vape.gui
     
-    Shader = vape.Categories.Render:CreateModule({
+    Shader = (vape.Categories.Visuals or vape.Categories.Render):CreateModule({
     	Name = 'Shader',
     	Function = function(callback)
     		if callback then
@@ -7978,6 +7978,146 @@ run(function()
     		end
     	end
     })
+end)
+
+run(function()
+    local TimeChanger, savedClockTime
+    local TimeValue = {Value = 18}
+    TimeChanger = (vape.Categories.Visuals or vape.Categories.Render):CreateModule({
+        Name = 'Time Changer',
+        Function = function(callback)
+            if callback then
+                savedClockTime = lightingService.ClockTime
+                lightingService.ClockTime = TimeValue.Value
+                TimeChanger:Clean(lightingService:GetPropertyChangedSignal('ClockTime'):Connect(function()
+                    if TimeChanger.Enabled and lightingService.ClockTime ~= TimeValue.Value then
+                        lightingService.ClockTime = TimeValue.Value
+                    end
+                end))
+            elseif savedClockTime then
+                lightingService.ClockTime = savedClockTime
+                savedClockTime = nil
+            end
+        end,
+        Tooltip = 'Locks the world time for clearer, better-looking matches.'
+    })
+    TimeValue = TimeChanger:CreateSlider({Name = 'Clock Time', Min = 0, Max = 24, Default = 18, Decimal = 10, Suffix = 'h', Function = function(val)
+        if TimeChanger.Enabled then lightingService.ClockTime = val end
+    end})
+end)
+
+run(function()
+    local CinematicBloom, Bloom
+    CinematicBloom = (vape.Categories.Visuals or vape.Categories.Render):CreateModule({
+        Name = 'Cinematic Bloom',
+        Function = function(callback)
+            if callback then
+                Bloom = Instance.new('BloomEffect')
+                Bloom.Name = 'AetherCinematicBloom'
+                Bloom.Intensity = 0.28
+                Bloom.Size = 32
+                Bloom.Threshold = 1.15
+                Bloom.Parent = lightingService
+            elseif Bloom then
+                Bloom:Destroy()
+                Bloom = nil
+            end
+        end,
+        Tooltip = 'Adds a lightweight glow to bright areas without expensive scene scans.'
+    })
+end)
+
+run(function()
+    local ColorGrading, Effect
+    ColorGrading = (vape.Categories.Visuals or vape.Categories.Render):CreateModule({
+        Name = 'Color Grading',
+        Function = function(callback)
+            if callback then
+                Effect = Instance.new('ColorCorrectionEffect')
+                Effect.Name = 'AetherColorGrading'
+                Effect.Brightness = 0.03
+                Effect.Contrast = 0.16
+                Effect.Saturation = 0.22
+                Effect.TintColor = Color3.fromRGB(245, 252, 255)
+                Effect.Parent = lightingService
+            elseif Effect then
+                Effect:Destroy()
+                Effect = nil
+            end
+        end,
+        Tooltip = 'Improves contrast and colour depth with one optimised post-processing effect.'
+    })
+end)
+
+run(function()
+    local SoftAtmosphere, Atmosphere
+    SoftAtmosphere = (vape.Categories.Visuals or vape.Categories.Render):CreateModule({
+        Name = 'Soft Atmosphere',
+        Function = function(callback)
+            if callback then
+                Atmosphere = Instance.new('Atmosphere')
+                Atmosphere.Name = 'AetherSoftAtmosphere'
+                Atmosphere.Density = 0.22
+                Atmosphere.Offset = 0.15
+                Atmosphere.Color = Color3.fromRGB(198, 225, 255)
+                Atmosphere.Decay = Color3.fromRGB(92, 105, 126)
+                Atmosphere.Haze = 0.35
+                Atmosphere.Glare = 0.12
+                Atmosphere.Parent = lightingService
+            elseif Atmosphere then
+                Atmosphere:Destroy()
+                Atmosphere = nil
+            end
+        end,
+        Tooltip = 'Adds subtle sky depth and haze while keeping visibility clear.'
+    })
+end)
+
+run(function()
+    local ClearView, savedFogEnd, savedFogStart
+    ClearView = (vape.Categories.Visuals or vape.Categories.Render):CreateModule({
+        Name = 'Clear View',
+        Function = function(callback)
+            if callback then
+                savedFogEnd, savedFogStart = lightingService.FogEnd, lightingService.FogStart
+                lightingService.FogStart = 0
+                lightingService.FogEnd = 100000
+            else
+                if savedFogEnd then lightingService.FogEnd = savedFogEnd end
+                if savedFogStart then lightingService.FogStart = savedFogStart end
+                savedFogEnd, savedFogStart = nil, nil
+            end
+        end,
+        Tooltip = 'Removes heavy fog for cleaner long-range visibility.'
+    })
+end)
+
+run(function()
+    local CameraPolish, FovValue, oldFov
+    local conn
+    CameraPolish = (vape.Categories.Visuals or vape.Categories.Render):CreateModule({
+        Name = 'Camera Polish',
+        Function = function(callback)
+            local camera = workspace.CurrentCamera
+            if callback and camera then
+                oldFov = camera.FieldOfView
+                camera.FieldOfView = FovValue.Value
+                conn = camera:GetPropertyChangedSignal('FieldOfView'):Connect(function()
+                    if CameraPolish.Enabled and camera.FieldOfView ~= FovValue.Value then
+                        camera.FieldOfView = FovValue.Value
+                    end
+                end)
+                CameraPolish:Clean(conn)
+            elseif camera and oldFov then
+                camera.FieldOfView = oldFov
+                oldFov = nil
+            end
+        end,
+        Tooltip = 'Applies a consistent cinematic field of view without per-frame work.'
+    })
+    FovValue = CameraPolish:CreateSlider({Name = 'Field of View', Min = 70, Max = 110, Default = 85, Suffix = '°', Function = function(val)
+        if CameraPolish.Enabled and workspace.CurrentCamera then workspace.CurrentCamera.FieldOfView = val end
+    end})
 end)
 
 run(function()
