@@ -8196,232 +8196,160 @@ run(function()
 end)
 
 run(function()
-    local Dreamscape, Objects = nil, {}
-    local saved = {}
-    local props = {'Ambient', 'OutdoorAmbient', 'Brightness', 'ClockTime', 'ExposureCompensation', 'EnvironmentDiffuseScale', 'EnvironmentSpecularScale'}
+    local GeneratorSanctuaries
+    local ShrineFolder
+    local pulseConnection
+    local ShrineStyle = {Value = 'Ancient'}
+    local ShrineDensity = {Value = 100}
+    local ShrineLights = {Enabled = true}
+    local ShrineParticles = {Enabled = true}
+    local ShrineRings = {Enabled = true}
 
-    local function restore()
-        for _, obj in Objects do
-            obj:Destroy()
-        end
-        table.clear(Objects)
-        for _, prop in props do
-            if saved[prop] ~= nil then
-                lightingService[prop] = saved[prop]
-            end
-        end
-        table.clear(saved)
+    local styles = {
+        Ancient = {
+            stone = Color3.fromRGB(92, 83, 70), metal = Color3.fromRGB(132, 109, 76), diamond = Color3.fromRGB(70, 205, 255), emerald = Color3.fromRGB(54, 235, 132), accent = Color3.fromRGB(255, 206, 118)
+        },
+        Frozen = {
+            stone = Color3.fromRGB(155, 174, 190), metal = Color3.fromRGB(205, 224, 235), diamond = Color3.fromRGB(145, 235, 255), emerald = Color3.fromRGB(105, 255, 185), accent = Color3.fromRGB(210, 235, 255)
+        },
+        Overgrown = {
+            stone = Color3.fromRGB(72, 94, 68), metal = Color3.fromRGB(112, 92, 58), diamond = Color3.fromRGB(92, 220, 255), emerald = Color3.fromRGB(86, 255, 135), accent = Color3.fromRGB(160, 220, 118)
+        }
+    }
+
+    local function isGeneratorPart(part)
+        local name = part.Name:lower()
+        local parent = part.Parent and part.Parent.Name:lower() or ''
+        return name:find('generator') or name:find('diamond') or name:find('emerald') or parent:find('generator') or parent:find('diamond') or parent:find('emerald')
     end
 
-    Dreamscape = (vape.Categories.Visuals or vape.Categories.Utility):CreateModule({
-        Name = 'Dreamscape',
-        Function = function(callback)
-            if callback then
-                for _, prop in props do
-                    saved[prop] = lightingService[prop]
-                end
-                lightingService.ClockTime = 13.6
-                lightingService.Brightness = 3.8
-                lightingService.Ambient = Color3.fromRGB(128, 96, 156)
-                lightingService.OutdoorAmbient = Color3.fromRGB(110, 132, 185)
-                lightingService.ExposureCompensation = 0.1
-                lightingService.EnvironmentDiffuseScale = 0.55
-                lightingService.EnvironmentSpecularScale = 0.85
-
-                Objects.Atmosphere = Instance.new('Atmosphere')
-                Objects.Atmosphere.Name = 'AetherDreamAtmosphere'
-                Objects.Atmosphere.Color = Color3.fromRGB(255, 195, 230)
-                Objects.Atmosphere.Decay = Color3.fromRGB(118, 128, 255)
-                Objects.Atmosphere.Density = 0.28
-                Objects.Atmosphere.Offset = 0.22
-                Objects.Atmosphere.Glare = 0.55
-                Objects.Atmosphere.Haze = 0.85
-
-                Objects.Color = Instance.new('ColorCorrectionEffect')
-                Objects.Color.Name = 'AetherDreamColor'
-                Objects.Color.Brightness = 0.08
-                Objects.Color.Contrast = 0.2
-                Objects.Color.Saturation = 0.46
-                Objects.Color.TintColor = Color3.fromRGB(255, 228, 248)
-
-                Objects.Bloom = Instance.new('BloomEffect')
-                Objects.Bloom.Name = 'AetherDreamBloom'
-                Objects.Bloom.Intensity = 0.95
-                Objects.Bloom.Size = 64
-                Objects.Bloom.Threshold = 0.62
-
-                Objects.Depth = Instance.new('DepthOfFieldEffect')
-                Objects.Depth.Name = 'AetherDreamDepth'
-                Objects.Depth.FarIntensity = 0.08
-                Objects.Depth.NearIntensity = 0
-                Objects.Depth.FocusDistance = 120
-                Objects.Depth.InFocusRadius = 70
-
-                Objects.Rays = Instance.new('SunRaysEffect')
-                Objects.Rays.Name = 'AetherDreamRays'
-                Objects.Rays.Intensity = 0.12
-                Objects.Rays.Spread = 0.55
-
-                for _, obj in Objects do
-                    obj.Parent = lightingService
-                end
-            else
-                restore()
-            end
-        end,
-        Tooltip = 'Rebuilds the scene into a bright pastel dream look with strong bloom, haze, depth and sun rays.'
-    })
-end)
-
-
-run(function()
-    local EmberHorizon, Objects = nil, {}
-    local saved = {}
-    local props = {'Ambient', 'OutdoorAmbient', 'Brightness', 'ClockTime', 'ExposureCompensation', 'EnvironmentDiffuseScale', 'EnvironmentSpecularScale', 'FogColor', 'FogStart', 'FogEnd'}
-
-    local function restore()
-        for _, obj in Objects do
-            obj:Destroy()
-        end
-        table.clear(Objects)
-        for _, prop in props do
-            if saved[prop] ~= nil then
-                lightingService[prop] = saved[prop]
-            end
-        end
-        table.clear(saved)
+    local function shrineColor(part, style)
+        local name = (part.Name..' '..(part.Parent and part.Parent.Name or '')):lower()
+        if name:find('emerald') then return style.emerald end
+        if name:find('diamond') then return style.diamond end
+        return style.accent
     end
 
-    EmberHorizon = (vape.Categories.Visuals or vape.Categories.Render):CreateModule({
-        Name = 'Ember Horizon',
-        Function = function(callback)
-            if callback then
-                for _, prop in props do
-                    saved[prop] = lightingService[prop]
-                end
-                lightingService.ClockTime = 17.85
-                lightingService.Brightness = 3.4
-                lightingService.Ambient = Color3.fromRGB(112, 58, 32)
-                lightingService.OutdoorAmbient = Color3.fromRGB(82, 39, 25)
-                lightingService.ExposureCompensation = 0.05
-                lightingService.EnvironmentDiffuseScale = 0.45
-                lightingService.EnvironmentSpecularScale = 0.7
-                lightingService.FogColor = Color3.fromRGB(255, 144, 77)
-                lightingService.FogStart = 80
-                lightingService.FogEnd = 650
-
-                Objects.Atmosphere = Instance.new('Atmosphere')
-                Objects.Atmosphere.Name = 'AetherEmberAtmosphere'
-                Objects.Atmosphere.Color = Color3.fromRGB(255, 154, 92)
-                Objects.Atmosphere.Decay = Color3.fromRGB(96, 40, 24)
-                Objects.Atmosphere.Density = 0.3
-                Objects.Atmosphere.Offset = 0.18
-                Objects.Atmosphere.Glare = 0.8
-                Objects.Atmosphere.Haze = 1.35
-
-                Objects.Color = Instance.new('ColorCorrectionEffect')
-                Objects.Color.Name = 'AetherEmberColor'
-                Objects.Color.Brightness = 0.04
-                Objects.Color.Contrast = 0.32
-                Objects.Color.Saturation = 0.28
-                Objects.Color.TintColor = Color3.fromRGB(255, 218, 172)
-
-                Objects.Bloom = Instance.new('BloomEffect')
-                Objects.Bloom.Name = 'AetherEmberBloom'
-                Objects.Bloom.Intensity = 0.75
-                Objects.Bloom.Size = 58
-                Objects.Bloom.Threshold = 0.68
-
-                Objects.Rays = Instance.new('SunRaysEffect')
-                Objects.Rays.Name = 'AetherEmberRays'
-                Objects.Rays.Intensity = 0.18
-                Objects.Rays.Spread = 0.42
-
-                for _, obj in Objects do
-                    obj.Parent = lightingService
-                end
-            else
-                restore()
-            end
-        end,
-        Tooltip = 'Adds a molten sunset grade with golden haze, strong sun rays, warm fog and cinematic bloom.'
-    })
-end)
-
-run(function()
-    local NeonCity, Objects = nil, {}
-    local saved = {}
-    local props = {'Ambient', 'OutdoorAmbient', 'Brightness', 'ClockTime', 'ExposureCompensation', 'EnvironmentDiffuseScale', 'EnvironmentSpecularScale', 'FogColor', 'FogStart', 'FogEnd'}
-
-    local function restore()
-        for _, obj in Objects do
-            obj:Destroy()
-        end
-        table.clear(Objects)
-        for _, prop in props do
-            if saved[prop] ~= nil then
-                lightingService[prop] = saved[prop]
-            end
-        end
-        table.clear(saved)
+    local function makePart(name, size, cf, material, color, transparency)
+        local part = Instance.new('Part')
+        part.Name = name
+        part.Anchored = true
+        part.CanCollide = false
+        part.CanTouch = false
+        part.CanQuery = false
+        part.Material = material
+        part.Color = color
+        part.Transparency = transparency or 0
+        part.Size = size
+        part.CFrame = cf
+        part.Parent = ShrineFolder
+        return part
     end
 
-    NeonCity = (vape.Categories.Visuals or vape.Categories.Render):CreateModule({
-        Name = 'Neon City',
+    local function buildShrine(generatorPart, index)
+        local style = styles[ShrineStyle.Value] or styles.Ancient
+        local coreColor = shrineColor(generatorPart, style)
+        local baseCF = generatorPart.CFrame + Vector3.new(0, math.max(generatorPart.Size.Y / 2, 1.5), 0)
+        local base = makePart('AetherGeneratorSanctuaryBase', Vector3.new(5.8, .18, 5.8), baseCF * CFrame.new(0, .08, 0), Enum.Material.Slate, style.stone, .12)
+        makePart('AetherGeneratorSanctuaryInlay', Vector3.new(4.2, .08, 4.2), base.CFrame * CFrame.new(0, .13, 0), Enum.Material.Metal, style.metal, .2)
+
+        for i = 1, 4 do
+            local angle = math.rad((i - 1) * 90 + 45)
+            local offset = Vector3.new(math.cos(angle) * 2.75, .75, math.sin(angle) * 2.75)
+            local pillar = makePart('AetherGeneratorSanctuaryPillar', Vector3.new(.32, 1.35, .32), baseCF * CFrame.new(offset), Enum.Material.Slate, style.stone, 0)
+            pillar.CFrame = pillar.CFrame * CFrame.Angles(0, angle, 0)
+            makePart('AetherGeneratorSanctuaryCrystal', Vector3.new(.42, .72, .42), pillar.CFrame * CFrame.new(0, .98, 0) * CFrame.Angles(math.rad(45), 0, math.rad(45)), Enum.Material.Neon, coreColor, .05)
+        end
+
+        if ShrineRings.Enabled then
+            for i = 1, 2 do
+                local ring = makePart('AetherGeneratorSanctuaryHalo', Vector3.new(6.4 + i * .8, .035, 6.4 + i * .8), baseCF * CFrame.new(0, 1.85 + i * .28, 0), Enum.Material.Neon, i == 1 and coreColor or style.accent, .72)
+                ring.Shape = Enum.PartType.Cylinder
+                ring:SetAttribute('AetherSpinSpeed', (i == 1 and 18 or -12) + index)
+            end
+        end
+
+        local beam = makePart('AetherGeneratorSanctuaryLightColumn', Vector3.new(.55, 7.5, .55), baseCF * CFrame.new(0, 4.1, 0), Enum.Material.Neon, coreColor, .7)
+        beam.Shape = Enum.PartType.Cylinder
+        if ShrineLights.Enabled then
+            local light = Instance.new('PointLight')
+            light.Name = 'AetherGeneratorSanctuaryLight'
+            light.Color = coreColor
+            light.Brightness = 1.6
+            light.Range = 18
+            light.Shadows = false
+            light.Parent = beam
+        end
+        if ShrineParticles.Enabled then
+            local particles = Instance.new('ParticleEmitter')
+            particles.Name = 'AetherGeneratorSanctuaryMotes'
+            particles.Texture = 'rbxassetid://243098098'
+            particles.Color = ColorSequence.new(coreColor)
+            particles.Rate = 22
+            particles.Lifetime = NumberRange.new(1.8, 3.2)
+            particles.Speed = NumberRange.new(.35, 1.25)
+            particles.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, .1), NumberSequenceKeypoint.new(.55, .2), NumberSequenceKeypoint.new(1, 0)})
+            particles.SpreadAngle = Vector2.new(360, 360)
+            particles.Parent = beam
+        end
+    end
+
+    local function clearShrines()
+        if pulseConnection then
+            pulseConnection:Disconnect()
+            pulseConnection = nil
+        end
+        if ShrineFolder then
+            ShrineFolder:Destroy()
+            ShrineFolder = nil
+        end
+    end
+
+    local function applyShrines()
+        if not GeneratorSanctuaries or not GeneratorSanctuaries.Enabled then return end
+        clearShrines()
+        ShrineFolder = Instance.new('Folder')
+        ShrineFolder.Name = 'AetherGeneratorSanctuaries'
+        ShrineFolder.Parent = workspace
+
+        local made = 0
+        local limit = math.max(2, math.floor(ShrineDensity.Value / 12))
+        for _, part in workspace:GetDescendants() do
+            if made >= limit then break end
+            if part:IsA('BasePart') and isGeneratorPart(part) then
+                made += 1
+                buildShrine(part, made)
+            end
+        end
+
+        pulseConnection = runService.RenderStepped:Connect(function(dt)
+            if not ShrineFolder then return end
+            for _, part in ShrineFolder:GetChildren() do
+                local speed = part:GetAttribute('AetherSpinSpeed')
+                if speed then
+                    part.CFrame = part.CFrame * CFrame.Angles(0, math.rad(speed) * dt, 0)
+                end
+            end
+        end)
+        GeneratorSanctuaries:Clean(pulseConnection)
+    end
+
+    GeneratorSanctuaries = (vape.Categories.Visuals or vape.Categories.Render):CreateModule({
+        Name = 'Generator Sanctuaries',
         Function = function(callback)
             if callback then
-                for _, prop in props do
-                    saved[prop] = lightingService[prop]
-                end
-                lightingService.ClockTime = 1.2
-                lightingService.Brightness = 2.1
-                lightingService.Ambient = Color3.fromRGB(36, 22, 78)
-                lightingService.OutdoorAmbient = Color3.fromRGB(8, 10, 26)
-                lightingService.ExposureCompensation = -0.1
-                lightingService.EnvironmentDiffuseScale = 0.2
-                lightingService.EnvironmentSpecularScale = 1
-                lightingService.FogColor = Color3.fromRGB(40, 16, 80)
-                lightingService.FogStart = 45
-                lightingService.FogEnd = 520
-
-                Objects.Atmosphere = Instance.new('Atmosphere')
-                Objects.Atmosphere.Name = 'AetherNeonAtmosphere'
-                Objects.Atmosphere.Color = Color3.fromRGB(106, 55, 255)
-                Objects.Atmosphere.Decay = Color3.fromRGB(5, 8, 30)
-                Objects.Atmosphere.Density = 0.34
-                Objects.Atmosphere.Offset = 0.08
-                Objects.Atmosphere.Glare = 0.15
-                Objects.Atmosphere.Haze = 1.75
-
-                Objects.Color = Instance.new('ColorCorrectionEffect')
-                Objects.Color.Name = 'AetherNeonColor'
-                Objects.Color.Brightness = 0.02
-                Objects.Color.Contrast = 0.48
-                Objects.Color.Saturation = 0.62
-                Objects.Color.TintColor = Color3.fromRGB(214, 224, 255)
-
-                Objects.Bloom = Instance.new('BloomEffect')
-                Objects.Bloom.Name = 'AetherNeonBloom'
-                Objects.Bloom.Intensity = 1.15
-                Objects.Bloom.Size = 72
-                Objects.Bloom.Threshold = 0.55
-
-                Objects.Depth = Instance.new('DepthOfFieldEffect')
-                Objects.Depth.Name = 'AetherNeonDepth'
-                Objects.Depth.FarIntensity = 0.12
-                Objects.Depth.NearIntensity = 0
-                Objects.Depth.FocusDistance = 95
-                Objects.Depth.InFocusRadius = 55
-
-                for _, obj in Objects do
-                    obj.Parent = lightingService
-                end
+                applyShrines()
             else
-                restore()
+                clearShrines()
             end
         end,
-        Tooltip = 'Builds a high-contrast cyberpunk scene with violet fog, glossy highlights, bright bloom and saturated neon colour grading.'
+        Tooltip = 'Turns diamond and emerald generators into non-collidable ancient shrine visuals with crystal pylons, light columns, motes and slow magical halos.'
     })
+    ShrineStyle = GeneratorSanctuaries:CreateDropdown({Name = 'Style', List = {'Ancient', 'Frozen', 'Overgrown'}, Default = 'Ancient', Function = applyShrines})
+    ShrineDensity = GeneratorSanctuaries:CreateSlider({Name = 'Shrines', Min = 24, Max = 120, Default = 100, Suffix = '%', Function = applyShrines})
+    ShrineLights = GeneratorSanctuaries:CreateToggle({Name = 'Lights', Default = true, Function = applyShrines})
+    ShrineParticles = GeneratorSanctuaries:CreateToggle({Name = 'Motes', Default = true, Function = applyShrines})
+    ShrineRings = GeneratorSanctuaries:CreateToggle({Name = 'Halos', Default = true, Function = applyShrines})
 end)
 
 run(function()
@@ -8504,13 +8432,13 @@ end)
 run(function()
     local IRLReplica
     local Objects, saved, savedClouds, materialCache = {}, {}, {}, {}
-    local decorFolder, particleFolder, ambienceFolder, storageFolder, cloudObject, cloudsCreated, cycleConnection
+    local decorFolder, particleFolder, ambienceFolder, storageFolder, cloudObject, cloudsCreated, cycleConnection, weatherConnection
     local terrain = workspace.Terrain
     local soundService = cloneref(game:GetService('SoundService'))
     local props = {'Ambient', 'OutdoorAmbient', 'Brightness', 'ClockTime', 'ExposureCompensation', 'EnvironmentDiffuseScale', 'EnvironmentSpecularScale', 'FogColor', 'FogStart', 'FogEnd', 'GlobalShadows', 'ColorShift_Top', 'ColorShift_Bottom', 'ShadowSoftness'}
     local Settings = {
         Season = {Value = 'Spring'}, Weather = {Value = 'Auto'}, TimePreset = {Value = 'Sunset'}, MaterialStyle = {Value = 'Cinematic'},
-        WeatherIntensity = {Value = 85}, ParticleDensity = {Value = 80}, DecorationDensity = {Value = 65}, DetailRange = {Value = 1200},
+        WeatherIntensity = {Value = 70}, ParticleDensity = {Value = 55}, DecorationDensity = {Value = 35}, DetailRange = {Value = 900},
         UltraRealism = {Enabled = true}, MaterialOverhaul = {Enabled = true}, DecorativeDetails = {Enabled = true}, Particles = {Enabled = true},
         AmbientSounds = {Enabled = true}, CinematicLighting = {Enabled = true}, DayNightCycle = {Enabled = false}, PreserveGameplayVisibility = {Enabled = true}, GeneratorGlow = {Enabled = true}
     }
@@ -8612,15 +8540,14 @@ run(function()
         if Objects.Color then Objects.Color.TintColor = season.tint; Objects.Color.Saturation = season.saturation; Objects.Color.Contrast = season.contrast; Objects.Color.Brightness = .025 end
         if Objects.Bloom then Objects.Bloom.Intensity = season.bloom; Objects.Bloom.Size = Settings.UltraRealism.Enabled and 64 or 36; Objects.Bloom.Threshold = .78 end
         if Objects.Rays then Objects.Rays.Intensity = season.rays; Objects.Rays.Spread = .62 end
-        if Objects.Depth then Objects.Depth.FarIntensity = .08 + (1 - preset.clarity) * .08; Objects.Depth.FocusDistance = 120; Objects.Depth.InFocusRadius = 85 end
-        if Objects.Blur then Objects.Blur.Size = Settings.TimePreset.Value == 'Stormy' and 2 or 0 end
+        if Objects.Depth then Objects.Depth.FarIntensity = .025 + (1 - preset.clarity) * .035; Objects.Depth.NearIntensity = 0; Objects.Depth.FocusDistance = 180; Objects.Depth.InFocusRadius = 140 end
         if cloudObject then cloudObject.Enabled = true; cloudObject.Cover = math.clamp(preset.cloud + (season == seasons.Winter and .18 or 0), 0, .98); cloudObject.Density = .35 + preset.cloud * .42; cloudObject.Color = lerpColor(Color3.fromRGB(255,255,255), season.fog, .38) end
     end
 
     function RealLifeBedWars.ApplyMaterials()
         if not Settings.MaterialOverhaul.Enabled then return end
         local season = getSeason()
-        local count, limit = 0, Settings.UltraRealism.Enabled and 6500 or 2600
+        local count, limit = 0, Settings.UltraRealism.Enabled and 1800 or 700
         for _, part in workspace:GetDescendants() do
             if count >= limit then break end
             if part:IsA('BasePart') and part ~= terrain and part.Size.Magnitude > 1.5 and (not Settings.PreserveGameplayVisibility.Enabled or not isProtectedPart(part)) then
@@ -8651,7 +8578,7 @@ run(function()
         if not Settings.DecorativeDetails.Enabled then return end
         if decorFolder then decorFolder:Destroy() end
         decorFolder = Instance.new('Folder'); decorFolder.Name = 'AetherIRLDecorations'; decorFolder.Parent = workspace
-        local season = getSeason(); local made, limit = 0, math.floor(Settings.DecorationDensity.Value * (Settings.UltraRealism.Enabled and 16 or 7))
+        local season = getSeason(); local made, limit = 0, math.floor(Settings.DecorationDensity.Value * (Settings.UltraRealism.Enabled and 7 or 3))
         for _, part in workspace:GetDescendants() do
             if made >= limit then break end
             if part:IsA('BasePart') and part.Anchored and part.Size.X > 4 and part.Size.Z > 4 and not isProtectedPart(part) and math.random(1,100) <= Settings.DecorationDensity.Value then
@@ -8669,6 +8596,7 @@ run(function()
     end
 
     function RealLifeBedWars.ApplyParticles()
+        if weatherConnection then weatherConnection:Disconnect(); weatherConnection = nil end
         if particleFolder then particleFolder:Destroy() end
         if not Settings.Particles.Enabled then return end
         particleFolder = Instance.new('Folder'); particleFolder.Name = 'AetherIRLParticles'; particleFolder.Parent = workspace
@@ -8677,7 +8605,8 @@ run(function()
         if (profile.rate or 0) > 0 then
             local rig = Instance.new('Part'); rig.Name = 'AetherIRLWeatherVolume'; rig.Anchored = true; rig.CanCollide = false; rig.CanTouch = false; rig.CanQuery = false; rig.Transparency = 1; rig.Size = Vector3.new(Settings.DetailRange.Value, 1, Settings.DetailRange.Value); rig.CFrame = gameCamera.CFrame + Vector3.new(0, 145, 0); rig.Parent = particleFolder
             local emitter = Instance.new('ParticleEmitter'); emitter.Name = 'AetherIRL'..weatherName; emitter.Texture = profile.texture; emitter.Color = ColorSequence.new(profile.color); emitter.Rate = profile.rate * (Settings.ParticleDensity.Value / 100) * (Settings.WeatherIntensity.Value / 100); emitter.Lifetime = profile.life or NumberRange.new(4,8); emitter.Speed = profile.speed; emitter.Size = profile.size; emitter.SpreadAngle = Vector2.new(18, 18); emitter.Acceleration = Vector3.new(0, -22, 0); emitter.Rotation = NumberRange.new(0, 360); emitter.RotSpeed = NumberRange.new(-80, 80); emitter.Parent = rig
-            if IRLReplica then IRLReplica:Clean(runService.RenderStepped:Connect(function() if rig.Parent and gameCamera then rig.CFrame = gameCamera.CFrame + Vector3.new(0,145,0) end end)) end
+            weatherConnection = runService.RenderStepped:Connect(function() if rig.Parent and gameCamera then rig.CFrame = gameCamera.CFrame + Vector3.new(0,145,0) end end)
+            if IRLReplica then IRLReplica:Clean(weatherConnection) end
         end
         if Settings.GeneratorGlow.Enabled then
             for _, part in workspace:GetDescendants() do
@@ -8712,6 +8641,7 @@ run(function()
 
     local function restore()
         if cycleConnection then cycleConnection:Disconnect(); cycleConnection = nil end
+        if weatherConnection then weatherConnection:Disconnect(); weatherConnection = nil end
         RealLifeBedWars.ClearDecorations()
         for _, obj in Objects do obj:Destroy() end; table.clear(Objects)
         for part, data in materialCache do if part and part.Parent then for prop, value in data do safeSet(part, prop, value) end end end; table.clear(materialCache)
@@ -8737,7 +8667,7 @@ run(function()
                 for _, prop in props do saved[prop] = lightingService[prop] end
                 storageFolder = Instance.new('Folder'); storageFolder.Name = 'AetherIRLStoredLighting'; storageFolder.Parent = vape.gui
                 for _, obj in lightingService:GetChildren() do
-                    if obj:IsA('Sky') or obj:IsA('Atmosphere') or obj:IsA('ColorCorrectionEffect') or obj:IsA('BloomEffect') or obj:IsA('SunRaysEffect') or obj:IsA('DepthOfFieldEffect') or obj:IsA('BlurEffect') then obj.Parent = storageFolder end
+                    if obj:IsA('Sky') or obj:IsA('Atmosphere') or obj:IsA('ColorCorrectionEffect') or obj:IsA('BloomEffect') or obj:IsA('SunRaysEffect') or obj:IsA('DepthOfFieldEffect') then obj.Parent = storageFolder end
                 end
                 cloudObject = terrain and terrain:FindFirstChildOfClass('Clouds')
                 if cloudObject then for _, prop in {'Cover', 'Density', 'Color', 'Enabled'} do savedClouds[prop] = cloudObject[prop] end else local suc, clouds = pcall(function() return Instance.new('Clouds') end); if suc and clouds then cloudObject = clouds; cloudObject.Name = 'AetherIRLClouds'; cloudObject.Parent = terrain; cloudsCreated = true end end
@@ -8747,7 +8677,6 @@ run(function()
                 Objects.Bloom = Instance.new('BloomEffect'); Objects.Bloom.Name = 'AetherIRLBloom'
                 Objects.Rays = Instance.new('SunRaysEffect'); Objects.Rays.Name = 'AetherIRLRays'
                 Objects.Depth = Instance.new('DepthOfFieldEffect'); Objects.Depth.Name = 'AetherIRLDepth'
-                Objects.Blur = Instance.new('BlurEffect'); Objects.Blur.Name = 'AetherIRLStormBlur'; Objects.Blur.Size = 0
                 for _, obj in Objects do obj.Parent = lightingService end
                 RealLifeBedWars.RefreshMap()
                 if Settings.DayNightCycle.Enabled then cycleConnection = runService.Heartbeat:Connect(function(dt) lightingService.ClockTime = (lightingService.ClockTime + dt / 90) % 24 end) end
@@ -8760,10 +8689,10 @@ run(function()
     Settings.Weather = IRLReplica:CreateDropdown({Name = 'Weather', List = {'Auto', 'Clear', 'Rain', 'Snow', 'Blizzard', 'Petals', 'Leaves', 'Dust', 'Fog'}, Default = 'Auto', Function = function(v) RealLifeBedWars.Config.WeatherName = v; RealLifeBedWars.RefreshMap() end})
     Settings.TimePreset = IRLReplica:CreateDropdown({Name = 'Time Preset', List = {'Morning', 'Noon', 'Sunset', 'Night', 'Stormy', 'Foggy'}, Default = 'Sunset', Function = function(v) RealLifeBedWars.Config.TimePreset = v; RealLifeBedWars.ApplyLighting() end})
     Settings.MaterialStyle = IRLReplica:CreateDropdown({Name = 'Material Style', List = {'Cinematic', 'Weathered', 'Fantasy Realism'}, Default = 'Cinematic', Function = function() RealLifeBedWars.ApplyMaterials() end})
-    Settings.WeatherIntensity = IRLReplica:CreateSlider({Name = 'Weather Intensity', Min = 0, Max = 100, Default = 85, Suffix = '%', Function = function(v) RealLifeBedWars.Config.WeatherIntensity = v / 100; RealLifeBedWars.ApplyParticles(); RealLifeBedWars.ApplyAmbience() end})
-    Settings.ParticleDensity = IRLReplica:CreateSlider({Name = 'Particle Density', Min = 0, Max = 100, Default = 80, Suffix = '%', Function = function(v) RealLifeBedWars.Config.ParticleDensity = v / 100; RealLifeBedWars.ApplyParticles() end})
-    Settings.DecorationDensity = IRLReplica:CreateSlider({Name = 'Decoration Density', Min = 0, Max = 100, Default = 65, Suffix = '%', Function = function() RealLifeBedWars.ApplySeasonDetails() end})
-    Settings.DetailRange = IRLReplica:CreateSlider({Name = 'Weather Range', Min = 250, Max = 2000, Default = 1200, Suffix = ' studs', Function = function() RealLifeBedWars.ApplyParticles() end})
+    Settings.WeatherIntensity = IRLReplica:CreateSlider({Name = 'Weather Intensity', Min = 0, Max = 100, Default = 70, Suffix = '%', Function = function(v) RealLifeBedWars.Config.WeatherIntensity = v / 100; RealLifeBedWars.ApplyParticles(); RealLifeBedWars.ApplyAmbience() end})
+    Settings.ParticleDensity = IRLReplica:CreateSlider({Name = 'Particle Density', Min = 0, Max = 100, Default = 55, Suffix = '%', Function = function(v) RealLifeBedWars.Config.ParticleDensity = v / 100; RealLifeBedWars.ApplyParticles() end})
+    Settings.DecorationDensity = IRLReplica:CreateSlider({Name = 'Decoration Density', Min = 0, Max = 100, Default = 35, Suffix = '%', Function = function() RealLifeBedWars.ApplySeasonDetails() end})
+    Settings.DetailRange = IRLReplica:CreateSlider({Name = 'Weather Range', Min = 250, Max = 2000, Default = 900, Suffix = ' studs', Function = function() RealLifeBedWars.ApplyParticles() end})
     Settings.UltraRealism = IRLReplica:CreateToggle({Name = 'Ultra Realism', Default = true, Function = function(v) RealLifeBedWars.Config.UltraRealism = v; RealLifeBedWars.RefreshMap() end})
     Settings.MaterialOverhaul = IRLReplica:CreateToggle({Name = 'Material Overhaul', Default = true, Function = function(v) RealLifeBedWars.Config.MaterialOverhaul = v; if v then RealLifeBedWars.ApplyMaterials() end end})
     Settings.DecorativeDetails = IRLReplica:CreateToggle({Name = 'Decorative Details', Default = true, Function = function(v) RealLifeBedWars.Config.DecorativeDetails = v; if v then RealLifeBedWars.ApplySeasonDetails() else if decorFolder then decorFolder:Destroy() end end end})
