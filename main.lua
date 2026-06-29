@@ -252,7 +252,7 @@ local function downloadFile(path, func)
 	if not isfile(path) then
 		setLoadingStatus('Downloading '..path, 0.60)
 		local suc, res = pcall(function()
-			return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherCoreV2/'..readfile('aethercorev2/profiles/commit.txt')..'/'..select(1, path:gsub('aethercorev2/', '')), true)
+			return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'..readfile('aethercorev2/profiles/commit.txt')..'/'..select(1, path:gsub('aethercorev2/', '')), true)
 		end)
 		if not suc or res == '404: Not Found' then
 			closeLoadingScreen()
@@ -272,7 +272,7 @@ end
 local function downloadOptionalFile(path)
 	if isfile(path) then return true end
 	local suc, res = pcall(function()
-		return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherCoreV2/'..readfile('aethercorev2/profiles/commit.txt')..'/'..select(1, path:gsub('aethercorev2/', '')), true)
+		return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'..readfile('aethercorev2/profiles/commit.txt')..'/'..select(1, path:gsub('aethercorev2/', '')), true)
 	end)
 	if not suc or res == '404: Not Found' then return false end
 	writefile(path, res)
@@ -342,7 +342,7 @@ local function finishLoading()
 				if shared.VapeDeveloper then
 					loadstring(readfile('aethercorev2/main.lua'), 'main')(_scriptconfig)
 				else
-					loadstring(game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherCoreV2/main/init.lua', true), 'init.lua')(_scriptconfig)
+					loadstring(game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/main/init.lua', true), 'init.lua')(_scriptconfig)
 				end
 			]]
 			local teleportConfig = httpService:JSONEncode(license)
@@ -424,7 +424,7 @@ if not shared.VapeIndependent then
 	else
 		if not shared.VapeDeveloper then
 			local suc, res = pcall(function()
-				return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherCoreV2/'..readfile('aethercorev2/profiles/commit.txt')..'/games/'..game.PlaceId..'.lua', true)
+				return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'..readfile('aethercorev2/profiles/commit.txt')..'/games/'..game.PlaceId..'.lua', true)
 			end)
 			if suc and res ~= '404: Not Found' then
 				runOptionalLoadingChunk(downloadFile('aethercorev2/games/'..game.PlaceId..'.lua'), tostring(game.PlaceId), license)
