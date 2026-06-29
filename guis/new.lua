@@ -6370,9 +6370,9 @@ local function createConfigManager(categoryapi)
 	local accentObjects = {}
 	local configMetadata = {
 		cc = {
-			Title = 'cc',
-			Initials = 'CC',
-			Description = 'A legitimate-focused configuration with essential modules for smooth gameplay. Great for everyday PvP and ranked matches.',
+			Title = 'Legit',
+			Initials = 'LG',
+			Description = 'A legitimate-focused pre-config with essential modules for smooth gameplay. Great for everyday PvP and ranked matches.',
 			Tags = {'Verified', 'Featured', 'Safe'}
 		},
 		legit = {
@@ -6400,9 +6400,9 @@ local function createConfigManager(categoryapi)
 			Tags = {'Verified', 'Safe', 'QOL'}
 		},
 		rage = {
-			Title = 'rage',
+			Title = 'Rage',
 			Initials = 'RG',
-			Description = 'An aggressive configuration tuned for maximum pressure and fast eliminations. Best for unranked or casual lobbies.',
+			Description = 'An aggressive pre-config tuned for maximum pressure and fast eliminations. Best for unranked or casual lobbies.',
 			Tags = {'Verified', 'Safe', 'High Risk'}
 		}
 	}

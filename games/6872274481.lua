@@ -10160,8 +10160,8 @@ run(function()
 					end
 
 					if harpoon and root.Velocity.Y < -60 and not workspace:Raycast(root.Position, Vector3.new(0, -140, 0), rayCheck) then
-						if tick() - lastAttempt > 0.35 then
-							lastAttempt = tick()
+						if not check then
+							check = true
 							local ground = findNearGround(root.CFrame, root) or findNearGround(lasty and lasty + Vector3.new(0, 5, 0) or root.CFrame, root)
 							if ground then
 								useHarpoon(root.Position, ground, harpoon)
