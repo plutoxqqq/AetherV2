@@ -9571,6 +9571,248 @@ run(function()
 end)
 
 run(function()
+    local TritonClutch
+    local Legit
+    local Back
+    local LandCheck
+    local BackDelay
+    local Limit
+    local Recall
+
+    local rayCheck = RaycastParams.new()
+    rayCheck.RespectCanCollide = true
+    rayCheck.FilterType = Enum.RaycastFilterType.Include
+    local projectileRemote = {InvokeServer = function() end}
+    local virtualInputManager = {
+        SendMouseButtonEvent = function() end,
+        SendKeyEvent = function() end
+    }
+    task.spawn(function()
+        pcall(function()
+            projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
+        end)
+        pcall(function()
+            virtualInputManager = cloneref(game:GetService('VirtualInputManager'))
+        end)
+    end)
+
+    local harpoonAbilities = {'harpoon', 'HARPOON', 'harpoon_throw', 'HARPOON_THROW', 'triton_harpoon', 'TRITON_HARPOON'}
+
+    local function isHarpoonTool(tool)
+        local name = tool and tool.Name and tool.Name:lower()
+        return name == 'harpoon' or name == 'trident' or name == 'triton_harpoon'
+    end
+
+    local function clickHeldHarpoon(target)
+        local camera = workspace.CurrentCamera
+        if not camera then
+            return false
+        end
+
+        local before = #store.selfProjectiles
+        local viewport = camera.ViewportSize
+        local original = camera.CFrame
+        pcall(function()
+            camera.CFrame = CFrame.lookAt(original.Position, target)
+        end)
+        virtualInputManager:SendMouseButtonEvent(viewport.X / 2, viewport.Y / 2, 0, true, game, 0)
+        task.wait()
+        virtualInputManager:SendMouseButtonEvent(viewport.X / 2, viewport.Y / 2, 0, false, game, 0)
+        camera.CFrame = original
+
+        local started = tick()
+        repeat
+            if #store.selfProjectiles > before then
+                return true
+            end
+            task.wait()
+        until tick() - started > 0.25
+        return false
+    end
+
+    local function waitForHarpoonClutch()
+        local started = tick()
+        repeat
+            task.wait()
+            local root = entitylib.isAlive and entitylib.character.RootPart
+            if root and root.Velocity.Y > -10 then
+                return true
+            end
+        until not TritonClutch.Enabled or tick() - started > 3
+        return false
+    end
+
+    task.spawn(function()
+        local success, abilityIds = pcall(function()
+            return require(replicatedStorage.TS.ability['ability-id']).AbilityId
+        end)
+        if success then
+            for _, ability in abilityIds do
+                if tostring(ability):lower():find('harpoon', 1, true) and not table.find(harpoonAbilities, ability) then
+                    table.insert(harpoonAbilities, ability)
+                end
+            end
+        end
+    end)
+
+    local function useAbility(list, payloads)
+        for _, ability in list do
+            local allowed = true
+            pcall(function()
+                allowed = not bedwars.AbilityController.canUseAbility or bedwars.AbilityController:canUseAbility(ability)
+            end)
+            if allowed then
+                for _, data in payloads do
+                    local success, result = pcall(function()
+                        return bedwars.AbilityController:useAbility(ability, newproxy(true), data)
+                    end)
+                    if success and result ~= false then
+                        return true
+                    end
+                    pcall(function()
+                        bedwars.Client:Get('UseAbility').instance:FireServer(ability, data)
+                    end)
+                end
+            end
+        end
+        return false
+    end
+
+    local function fireHarpoonProjectile(pos, spot, item)
+        local projectileType = 'harpoon_projectile'
+        local meta = bedwars.ProjectileMeta[projectileType]
+        if not meta then
+            return false
+        end
+
+        local launchVelocity = meta.launchVelocity or 160
+        local gravity = meta.gravitationalAcceleration or 0
+        local calc = prediction.SolveTrajectory(pos, launchVelocity, gravity, spot, Vector3.zero, workspace.Gravity, 0, 0) or spot
+        local dir = CFrame.lookAt(pos, calc).LookVector * launchVelocity
+        local shotId = httpService:GenerateGUID(false)
+        local landed = false
+        local projectile
+
+        pcall(function()
+            projectile = bedwars.ProjectileController:createLocalProjectile(meta, projectileType, projectileType, pos, nil, dir, {drawDurationSeconds = 1})
+        end)
+        if projectile then
+            task.spawn(function()
+                repeat task.wait() until not projectile or not projectile.Parent
+                landed = true
+            end)
+        end
+
+        local success, result = pcall(function()
+            return projectileRemote:InvokeServer(item.tool, projectileType, projectileType, pos, pos, dir, httpService:GenerateGUID(true), {
+                drawDurationSeconds = 1,
+                shotId = shotId
+            }, workspace:GetServerTimeNow() - 0.045)
+        end)
+
+        return success and result ~= nil, function()
+            local started = tick()
+            repeat task.wait() until landed or not TritonClutch.Enabled or tick() - started > 3
+            return landed
+        end
+    end
+
+    local function useHarpoon(pos, spot, item)
+        local hotbar, old = getHotbar(item.tool), store.hand
+        switchItem(item.tool)
+        if Legit.Enabled and hotbar then
+            hotbarSwitch(hotbar)
+        end
+
+        local used, clutchCheck
+        if clickHeldHarpoon(spot) then
+            used, clutchCheck = true, waitForHarpoonClutch
+        else
+            used, clutchCheck = fireHarpoonProjectile(pos, spot, item)
+        end
+        if not used then
+            used = useAbility(harpoonAbilities, {{target = spot, origin = pos}, {targetPosition = spot, position = pos}, {position = spot}, spot})
+            clutchCheck = waitForHarpoonClutch
+        end
+        if used and Recall.Enabled then
+            task.spawn(function()
+                task.wait(1)
+                virtualInputManager:SendKeyEvent(true, Enum.KeyCode.C, false, game)
+                task.wait()
+                virtualInputManager:SendKeyEvent(false, Enum.KeyCode.C, false, game)
+            end)
+        end
+        if Back.Enabled and LandCheck.Enabled and clutchCheck then
+            clutchCheck()
+        end
+        if Back.Enabled and old and old.tool then
+            if used and old.tool ~= item.tool then
+                task.wait(10)
+            end
+            task.wait(BackDelay:GetRandomValue())
+            switchItem(old.tool)
+            if Legit.Enabled and getHotbar(old.tool) then
+                hotbarSwitch(getHotbar(old.tool))
+            end
+        end
+    end
+
+    local function findNearGround(origin)
+        for _, v in {Vector3.new(1, 0, 0), Vector3.new(0, 0, 1), Vector3.new(-1, 0, 0), Vector3.new(0, 0, -1)} do
+            for i = 1, 24 do
+                local ray = workspace:Raycast((origin.Position + (Vector3.yAxis * 3)) + (v * i), Vector3.new(0, -60, 0), rayCheck)
+                if ray then
+                    return ray.Position
+                end
+            end
+        end
+        return nil
+    end
+
+    TritonClutch = vape.Categories.Utility:CreateModule({
+        Name = 'Triton Clutch',
+        Function = function(callback)
+            if callback then
+                local check, lasty
+                repeat
+                    if entitylib.isAlive and (not Limit.Enabled or isHarpoonTool(store.hand.tool)) then
+                        local root = entitylib.character.RootPart
+                        local harpoon = getItem('harpoon') or getItem('triton_harpoon') or getItem('trident')
+                        rayCheck.FilterDescendantsInstances = {store.map}
+                        rayCheck.CollisionGroup = root.CollisionGroup
+                        if entitylib.character.Humanoid.FloorMaterial ~= Enum.Material.Air then
+                            lasty = root.CFrame
+                        end
+                        if harpoon and root.Velocity.Y < -100 and not workspace:Raycast(root.Position, Vector3.new(0, -200, 0), rayCheck) then
+                            if not check then
+                                check = true
+                                local ground = findNearGround(root.CFrame + Vector3.new(0, 40, 0)) or findNearGround(lasty and lasty + Vector3.new(0, 5, 0) or root.CFrame)
+                                if ground then
+                                    useHarpoon(root.Position, ground, harpoon)
+                                end
+                            end
+                        else
+                            check = false
+                        end
+                    end
+                    task.wait(0.1)
+                until not TritonClutch.Enabled
+            end
+        end,
+        Tooltip = 'Automatically throws Triton\'s harpoon onto nearby ground after falling a certain distance.'
+    })
+    Legit = TritonClutch:CreateToggle({Name = 'Legit Switch', Tooltip = 'Visualizes the switching clientside', Default = true})
+    Back = TritonClutch:CreateToggle({Name = 'Switch back', Default = true, Function = function(callback)
+        if BackDelay then BackDelay.Object.Visible = callback end
+        if LandCheck then LandCheck.Object.Visible = callback end
+    end, Tooltip = 'Switches back to the last slot before the harpoon clutch'})
+    LandCheck = TritonClutch:CreateToggle({Name = 'Only after clutch', Tooltip = 'Only switches back after the harpoon clutch activates', Darker = true})
+    BackDelay = TritonClutch:CreateTwoSlider({Name = 'Switch Back Delay', Min = 0, Max = 2, DefaultMin = 0.1, DefaultMax = 0.2, Darker = true})
+    Limit = TritonClutch:CreateToggle({Name = 'Limit to items', Tooltip = 'Only throws Triton\'s harpoon when holding the harpoon or trident'})
+    Recall = TritonClutch:CreateToggle({Name = 'Recall', Tooltip = 'Presses C to activate Recall / Go to base after clutching'})
+end)
+
+run(function()
     local AutoPearl
     local Legit
     local Back
@@ -10279,6 +10521,295 @@ run(function()
             end
         end,
     })
+end)
+
+run(function()
+    local MovementPredictor
+    local Targets
+    local Range
+    local PredictionTime
+    local Transparency
+    local ColourMode
+    local AnimationSync
+    local ShowAccessories
+    local FadeDistance
+    local Smoothness
+    local MaxGhosts
+    local IgnoreStationary
+    local IgnoreInvisible
+    local AccuracyMode
+    local DrawTrail
+    local TrailLength
+    local GhostOutline
+    local GhostPulse
+    local PredictionIndicator
+    local ghosts = {}
+    local pool = {}
+    local ghostFolder
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Include
+    rayParams.RespectCanCollide = true
+
+    local colourModes = {
+        White = Color3.new(1, 1, 1),
+        Cyan = Color3.fromRGB(70, 255, 255)
+    }
+
+    local function isInvisible(char)
+        for _, obj in char:GetDescendants() do
+            if obj:IsA('BasePart') and obj.Name ~= 'HumanoidRootPart' and obj.Transparency < 0.95 then
+                return false
+            end
+        end
+        return true
+    end
+
+    local function cleanGhost(model)
+        for _, obj in model:GetDescendants() do
+            if obj:IsA('BasePart') then
+                obj.Anchored = true
+                obj.CanCollide = false
+                obj.CanTouch = false
+                obj.CanQuery = false
+                obj.CastShadow = false
+                obj.Massless = true
+            elseif obj:IsA('Script') or obj:IsA('LocalScript') or obj:IsA('Sound') or obj:IsA('ParticleEmitter') or obj:IsA('Trail') or obj:IsA('Beam') or obj:IsA('BillboardGui') then
+                obj:Destroy()
+            elseif obj:IsA('Humanoid') then
+                obj.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+                obj.PlatformStand = true
+            elseif obj:IsA('Decal') or obj:IsA('Texture') then
+                obj.Transparency = math.max(obj.Transparency, 0.5)
+            elseif obj:IsA('Accessory') and not ShowAccessories.Enabled then
+                obj:Destroy()
+            end
+        end
+    end
+
+    local function applyVisuals(data, alpha, confidence)
+        local pulse = GhostPulse.Enabled and ((math.sin(tick() * 4) + 1) * 0.08) or 0
+        local transparency = math.clamp((Transparency.Value / 100) + alpha + pulse, 0, 0.95)
+        local selected = colourModes[ColourMode.Value]
+        if ColourMode.Value == 'GUI Accent Colour' then
+            local success, accent = pcall(function() return vape.Categories.Friends.Color end)
+            selected = success and accent and Color3.fromHSV(accent.Hue, accent.Sat, accent.Value) or Color3.fromRGB(120, 180, 255)
+        elseif ColourMode.Value == 'Rainbow' then
+            selected = Color3.fromHSV(tick() % 5 / 5, 0.8, 1)
+        end
+        for _, obj in data.Model:GetDescendants() do
+            if obj:IsA('BasePart') then
+                obj.LocalTransparencyModifier = transparency
+                if selected then obj.Color = selected end
+            end
+        end
+        if data.Highlight then
+            data.Highlight.Enabled = GhostOutline.Enabled
+            data.Highlight.FillTransparency = math.clamp(transparency + 0.15, 0, 1)
+            data.Highlight.OutlineTransparency = math.clamp(transparency - 0.1, 0, 1)
+            data.Highlight.FillColor = selected or Color3.fromRGB(170, 220, 255)
+            data.Highlight.OutlineColor = data.Highlight.FillColor
+        end
+        if data.Label then
+            data.Label.Enabled = PredictionIndicator.Enabled
+            local text = confidence > 0.72 and '🟢 High' or confidence > 0.4 and '🟡 Medium' or '🔴 Low'
+            data.Label.TextLabel.Text = text
+        end
+    end
+
+    local function acquireGhost(ent)
+        local model = table.remove(pool)
+        if not model then
+            local oldArchivable = ent.Character.Archivable
+            ent.Character.Archivable = true
+            model = ent.Character:Clone()
+            ent.Character.Archivable = oldArchivable
+            cleanGhost(model)
+        end
+        model.Name = 'MovementPredictorGhost'
+        model.Parent = ghostFolder
+        local highlight = model:FindFirstChild('MovementPredictorOutline') or Instance.new('Highlight')
+        highlight.Name = 'MovementPredictorOutline'
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Adornee = model
+        highlight.Parent = model
+        local label = model:FindFirstChild('MovementPredictorIndicator') or Instance.new('BillboardGui')
+        label.Name = 'MovementPredictorIndicator'
+        label.Size = UDim2.fromOffset(90, 24)
+        label.StudsOffset = Vector3.new(0, 3.5, 0)
+        label.AlwaysOnTop = true
+        label.Parent = model
+        local text = label:FindFirstChild('TextLabel') or Instance.new('TextLabel')
+        text.BackgroundTransparency = 1
+        text.Size = UDim2.fromScale(1, 1)
+        text.TextScaled = true
+        text.TextColor3 = Color3.new(1, 1, 1)
+        text.TextStrokeTransparency = 0.35
+        text.Parent = label
+        return {Model = model, History = {}, CurrentCFrame = ent.RootPart.CFrame, Fade = 1, Highlight = highlight, Label = label, Trails = {}}
+    end
+
+    local function releaseGhost(key)
+        local data = ghosts[key]
+        if not data then return end
+        for _, trail in data.Trails do trail:Destroy() end
+        data.Model.Parent = nil
+        table.insert(pool, data.Model)
+        ghosts[key] = nil
+    end
+
+    local function addTrail(data, pos)
+        if not DrawTrail.Enabled then return end
+        local part = Instance.new('Part')
+        part.Name = 'MovementPredictionTrail'
+        part.Anchored = true
+        part.CanCollide = false
+        part.CanTouch = false
+        part.CanQuery = false
+        part.CastShadow = false
+        part.Shape = Enum.PartType.Ball
+        part.Size = Vector3.new(0.35, 0.35, 0.35)
+        part.Material = Enum.Material.Neon
+        part.Color = Color3.fromRGB(90, 220, 255)
+        part.Transparency = 0.35
+        part.Position = pos
+        part.Parent = ghostFolder
+        table.insert(data.Trails, part)
+        while #data.Trails > TrailLength.Value do
+            table.remove(data.Trails, 1):Destroy()
+        end
+        task.delay(1.5, function()
+            if part.Parent then part:Destroy() end
+        end)
+    end
+
+
+    local function syncAnimation(data, ent)
+        if not AnimationSync.Enabled then return end
+        local sourceMotors = {}
+        for _, obj in ent.Character:GetDescendants() do
+            if obj:IsA('Motor6D') then
+                sourceMotors[obj.Name] = obj.Transform
+            end
+        end
+        for _, obj in data.Model:GetDescendants() do
+            if obj:IsA('Motor6D') and sourceMotors[obj.Name] then
+                obj.Transform = sourceMotors[obj.Name]
+            end
+        end
+    end
+
+    local function predict(data, root, humanoid, dt)
+        local now = tick()
+        local velocity = root.AssemblyLinearVelocity or root.Velocity
+        local grounded = humanoid and humanoid.FloorMaterial ~= Enum.Material.Air or math.abs(velocity.Y) < 2
+        local history = data.History
+        table.insert(history, {Position = root.Position, Velocity = velocity, Direction = velocity.Magnitude > 0.05 and velocity.Unit or root.CFrame.LookVector, Time = now, Grounded = grounded, VerticalVelocity = velocity.Y})
+        local window = AccuracyMode.Value == 'High Accuracy' and 2 or AccuracyMode.Value == 'Balanced' and 1.2 or 0.65
+        while history[1] and now - history[1].Time > window do table.remove(history, 1) end
+        if #history < 2 then return root.CFrame, 1, velocity.Magnitude end
+        local first = history[1]
+        local averageVelocity = Vector3.zero
+        local direction = Vector3.zero
+        local turnAmount = 0
+        for i, sample in history do
+            averageVelocity += sample.Velocity
+            direction += sample.Direction
+            if i > 1 then
+                turnAmount += 1 - math.clamp(sample.Direction:Dot(history[i - 1].Direction), -1, 1)
+            end
+        end
+        averageVelocity /= #history
+        if direction.Magnitude > 0.01 then direction = direction.Unit else direction = root.CFrame.LookVector end
+        local acceleration = (velocity - first.Velocity) / math.max(now - first.Time, 0.05)
+        local consistency = 1 - math.clamp(turnAmount / math.max(#history - 1, 1), 0, 1)
+        local future = PredictionTime.Value / 1000
+        local blend = AccuracyMode.Value == 'High Accuracy' and 0.55 or AccuracyMode.Value == 'Balanced' and 0.4 or 0.25
+        local predictedVelocity = velocity:Lerp(averageVelocity, blend) + (acceleration * future * 0.35 * consistency)
+        if grounded then
+            predictedVelocity *= Vector3.new(0.86, 0.35, 0.86)
+        else
+            predictedVelocity = Vector3.new(predictedVelocity.X * 0.98, predictedVelocity.Y - workspace.Gravity * future * 0.35, predictedVelocity.Z * 0.98)
+        end
+        local predicted = root.Position + predictedVelocity * future + direction * math.min(velocity.Magnitude * future * 0.25 * consistency, 4)
+        if (predicted - root.Position).Magnitude > math.max(velocity.Magnitude * future * 2.5, 18) then
+            predicted = root.Position:Lerp(predicted, 0.35)
+        end
+        rayParams.FilterDescendantsInstances = {store.map or workspace}
+        local ray = workspace:Raycast(root.Position, predicted - root.Position, rayParams)
+        if ray then predicted = ray.Position - (predicted - root.Position).Unit end
+        local look = predictedVelocity * Vector3.new(1, 0, 1)
+        local cf = look.Magnitude > 0.1 and CFrame.lookAt(predicted, predicted + look.Unit) or root.CFrame.Rotation + predicted
+        return cf, consistency, velocity.Magnitude
+    end
+
+    MovementPredictor = vape.Categories.Utility:CreateModule({
+        Name = 'Movement Predictor',
+        Function = function(callback)
+            if callback then
+                ghostFolder = Instance.new('Folder')
+                ghostFolder.Name = 'MovementPredictorGhosts'
+                ghostFolder.Parent = workspace
+                MovementPredictor:Clean(runService.RenderStepped:Connect(function(dt)
+                    if not entitylib.isAlive then return end
+                    local localPosition = entitylib.character.RootPart.Position
+                    local used = 0
+                    local active = {}
+                    for _, ent in entitylib.List do
+                        if used >= MaxGhosts.Value then break end
+                        if ent.Targetable and ((ent.NPC and Targets.NPCs.Enabled) or (not ent.NPC and Targets.Players.Enabled)) and ent.RootPart and ent.RootPart.Parent then
+                            local distance = (ent.RootPart.Position - localPosition).Magnitude
+                            if distance <= Range.Value and (not IgnoreInvisible.Enabled or not isInvisible(ent.Character)) then
+                                local key = ent.Character
+                                local data = ghosts[key] or acquireGhost(ent)
+                                ghosts[key] = data
+                                local cf, confidence, speed = predict(data, ent.RootPart, ent.Humanoid, dt)
+                                if not (IgnoreStationary.Enabled and speed < 1 and confidence > 0.8) then
+                                    local alpha = math.clamp((distance - (Range.Value - FadeDistance.Value)) / math.max(FadeDistance.Value, 1), 0, 1) * 0.35
+                                    data.Fade = math.max(data.Fade - dt * 5, 0)
+                                    local lerpAlpha = math.clamp(dt * (18 / math.max(Smoothness.Value, 1)), 0.02, 1)
+                                    data.CurrentCFrame = data.CurrentCFrame:Lerp(cf, lerpAlpha)
+                                    data.Model:PivotTo(data.CurrentCFrame)
+                                    syncAnimation(data, ent)
+                                    applyVisuals(data, math.max(alpha, data.Fade), confidence)
+                                    if data.Label then data.Label.Adornee = data.Model.PrimaryPart or data.Model:FindFirstChild('Head') or data.Model:FindFirstChildWhichIsA('BasePart') end
+                                    addTrail(data, data.CurrentCFrame.Position)
+                                    active[key] = true
+                                    used += 1
+                                end
+                            end
+                        end
+                    end
+                    for key in ghosts do
+                        if not active[key] then releaseGhost(key) end
+                    end
+                end))
+            else
+                for key in ghosts do releaseGhost(key) end
+                for _, model in pool do model:Destroy() end
+                table.clear(pool)
+                if ghostFolder then ghostFolder:Destroy() ghostFolder = nil end
+            end
+        end,
+        Tooltip = 'Displays smooth ghost clones at predicted future entity positions.'
+    })
+    Targets = MovementPredictor:CreateTargets({Players = true, NPCs = true})
+    Range = MovementPredictor:CreateSlider({Name = 'Prediction Range', Min = 5, Max = 300, Default = 80, Suffix = function(val) return val == 1 and 'stud' or 'studs' end})
+    PredictionTime = MovementPredictor:CreateSlider({Name = 'Prediction Time', Min = 50, Max = 500, Default = 150, Suffix = function(val) return `{val} ms` end})
+    Transparency = MovementPredictor:CreateSlider({Name = 'Ghost Transparency', Min = 0, Max = 100, Default = 50, Suffix = function(val) return `{val}%` end})
+    ColourMode = MovementPredictor:CreateDropdown({Name = 'Ghost Colour Mode', List = {'Default Character', 'GUI Accent Colour', 'White', 'Cyan', 'Rainbow'}, Default = 'Default Character'})
+    AnimationSync = MovementPredictor:CreateToggle({Name = 'Animation Sync', Tooltip = 'Keeps the ghost static when disabled and allows cloned animation state when enabled.'})
+    ShowAccessories = MovementPredictor:CreateToggle({Name = 'Show Accessories'})
+    FadeDistance = MovementPredictor:CreateSlider({Name = 'Fade Distance', Min = 1, Max = 150, Default = 30, Suffix = function(val) return val == 1 and 'stud' or 'studs' end})
+    Smoothness = MovementPredictor:CreateSlider({Name = 'Smoothness', Min = 1, Max = 20, Default = 8})
+    MaxGhosts = MovementPredictor:CreateSlider({Name = 'Max Ghosts', Min = 1, Max = 50, Default = 12})
+    IgnoreStationary = MovementPredictor:CreateToggle({Name = 'Ignore Stationary Targets', Default = true})
+    IgnoreInvisible = MovementPredictor:CreateToggle({Name = 'Ignore Invisible Targets', Default = true})
+    AccuracyMode = MovementPredictor:CreateDropdown({Name = 'Prediction Accuracy Mode', List = {'Fast', 'Balanced', 'High Accuracy'}, Default = 'Balanced'})
+    DrawTrail = MovementPredictor:CreateToggle({Name = 'Draw Prediction Trail', Function = function(callback) if TrailLength then TrailLength.Object.Visible = callback end end})
+    TrailLength = MovementPredictor:CreateSlider({Name = 'Trail Length', Min = 1, Max = 30, Default = 8, Darker = true, Visible = false})
+    GhostOutline = MovementPredictor:CreateToggle({Name = 'Ghost Outline', Default = true})
+    GhostPulse = MovementPredictor:CreateToggle({Name = 'Ghost Pulse'})
+    PredictionIndicator = MovementPredictor:CreateToggle({Name = 'Prediction Indicator'})
 end)
 
 run(function()
@@ -11522,32 +12053,28 @@ end)
 run(function()
     local BedProtector
     local PlaceRange
+    local Layers
     local Blacklist
     local Mode
     local Smart
     local Switch
-    
+
     local function getBedNear()
         local localPosition = entitylib.isAlive and entitylib.character.RootPart.Position or Vector3.zero
         for _, v in collectionService:GetTagged('bed') do
-            if
-                (localPosition - v.Position).Magnitude < 14
-                and v:GetAttribute('Team' .. (lplr:GetAttribute('Team') or -1) .. 'NoBreak')
-            then
+            if (localPosition - v.Position).Magnitude < 14 and v:GetAttribute('Team' .. (lplr:GetAttribute('Team') or -1) .. 'NoBreak') then
                 return v
             end
         end
         return nil
     end
-    
+
     local function getBlocks()
         local blocks = {}
         for _, item in store.inventory.inventory.items do
             local block = bedwars.ItemMeta[item.itemType].block
-            if
-                block and not table.find(Blacklist.ListEnabled, item.itemType:find('wool') and 'wool' or item.itemType)
-            then
-                table.insert(blocks, { item.itemType, block.health, item.tool })
+            if block and not table.find(Blacklist.ListEnabled, item.itemType:find('wool') and 'wool' or item.itemType) then
+                table.insert(blocks, {item.itemType, block.health, item.tool})
             end
         end
         table.sort(blocks, function(a, b)
@@ -11555,20 +12082,7 @@ run(function()
         end)
         return blocks
     end
-    
-    local function getPyramid(size, grid)
-        local positions = {}
-        for h = size, 0, -1 do
-            for w = h, 0, -1 do
-                table.insert(positions, Vector3.new(w, (size - h), ((h + 1) - w)) * grid)
-                table.insert(positions, Vector3.new(w * -1, (size - h), ((h + 1) - w)) * grid)
-                table.insert(positions, Vector3.new(w, (size - h), (h - w) * -1) * grid)
-                table.insert(positions, Vector3.new(w * -1, (size - h), (h - w) * -1) * grid)
-            end
-        end
-        return positions
-    end
-    
+
     BedProtector = vape.Categories.World:CreateModule({
         Name = 'Bed Protector',
         Function = function(callback)
@@ -11576,41 +12090,57 @@ run(function()
                 repeat
                     local bed = getBedNear()
                     if bed then
-                        for i, block in getBlocks() do
+                        local bedPos = roundPos(bed.Position)
+                        local protected = {[bedPos] = true}
+
+                        for _, block in getBlocks() do
                             local switch, old = Switch.Enabled, store.hand and store.hand.tool and getHotbar(store.hand.tool) or nil
-                            local hotbar = nil
-    
-                            if switch then
-                                hotbar = getHotbar(block[3])
-                            end
-    
-                            for _, pos in getPyramid(i, 3) do
-                                if not BedProtector.Enabled then
+                            local hotbar = switch and getHotbar(block[3]) or nil
+
+                            for _ = 1, Layers.Value do
+                                local newPositions = {}
+                                for pos in protected do
+                                    for _, offset in {Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0), Vector3.new(0, 0, 3), Vector3.new(0, 0, -3), Vector3.new(0, 3, 0)} do
+                                        local newPos = pos + offset
+                                        if not protected[newPos] then
+                                            newPositions[newPos] = true
+                                        end
+                                    end
+                                end
+
+                                local placedAny = false
+                                for newPos in newPositions do
+                                    if not BedProtector.Enabled then
+                                        break
+                                    end
+                                    if getPlacedBlock(newPos) then
+                                        protected[newPos] = true
+                                        continue
+                                    end
+                                    if (entitylib.character.RootPart.Position - newPos).Magnitude > PlaceRange.Value then
+                                        continue
+                                    end
+                                    if hotbar and hotbarSwitch(hotbar) then
+                                        task.wait()
+                                    end
+                                    task.spawn(bedwars.placeBlock, newPos, block[1], false)
+                                    placedAny = true
+                                    protected[newPos] = true
+                                    task.wait(0.1)
+                                end
+
+                                if not placedAny or not BedProtector.Enabled then
                                     break
                                 end
-                                pos = (bed.CFrame * CFrame.new(pos)).Position
-                                if getPlacedBlock(pos) then
-                                    continue
-                                end
-                                if (entitylib.character.RootPart.Position - pos).Magnitude > PlaceRange.Value then
-                                    continue
-                                end
-                                if hotbar and hotbarSwitch(hotbar) then
-                                    task.wait()
-                                end
-                                task.spawn(bedwars.placeBlock, pos, block[1], false)
-                                task.wait(0.1)
                             end
-    
+
                             if switch and old and hotbarSwitch(old) then
                                 task.wait()
                             end
                         end
-                    else
-                        if Mode.Value == 'On Key' then
-                            notif('BedProtector', 'Unable to locate bed', 5)
-                            BedProtector:Toggle()
-                        end
+                    elseif Mode.Value == 'On Key' then
+                        notif('BedProtector', 'Unable to locate bed', 5)
+                        BedProtector:Toggle()
                     end
                     task.wait(0.5)
                     if Mode.Value == 'On Key' then
@@ -11622,7 +12152,7 @@ run(function()
         end,
         Tooltip = 'Automatically places strong blocks around the bed.'
     })
-    
+
     Mode = BedProtector:CreateDropdown({
         Name = 'Mode',
         List = {'Toggle', 'On Key'},
@@ -11642,6 +12172,15 @@ run(function()
         Min = 1,
         Max = 30,
         Default = 15,
+    })
+    Layers = BedProtector:CreateSlider({
+        Name = 'Layers',
+        Min = 1,
+        Max = 5,
+        Default = 1,
+        Suffix = function(val)
+            return val <= 1 and 'layer' or 'layers'
+        end,
     })
     Switch = BedProtector:CreateToggle({Name = 'Auto Switch'})
     Smart = BedProtector:CreateToggle({Name = 'Smart', Default = true})
