@@ -694,24 +694,103 @@ run(function()
 	local Targets
 	local Range
 	local Duration
-	local Confidence
 	local Transparency
+	local ConfidenceGuard
+	local Smoothness
+	local ShowLowConfidence
+
 	local predictionModel
 	local predictedEntity
-	local lastPrediction
+	local lastPredictionPosition
+	local lastTargetCFrame
+	local lastStyledTransparency
 	local samples = {}
+
+	local MAX_SAMPLES = 14
+	local SAMPLE_LIFETIME = 0.75
+	local MODEL_NAME = 'AetherV2MovementPrediction'
+
+	local function clearSamples()
+		table.clear(samples)
+		lastPredictionPosition = nil
+		lastTargetCFrame = nil
+	end
 
 	local function cleanupPredictionModel()
 		if predictionModel then
 			predictionModel:Destroy()
 			predictionModel = nil
 		end
+
 		predictedEntity = nil
+		lastStyledTransparency = nil
 	end
 
-	local function stylePredictionModel(model, confidence)
+	local function getRoot()
+		return entitylib.isAlive and entitylib.character and entitylib.character.RootPart
+	end
+
+	local function isValidTarget(ent)
+		if not ent or not ent.Targetable or not ent.Character or not ent.RootPart then
+			return false
+		end
+
+		if ent == entitylib.character then
+			return false
+		end
+
+		local isPlayerTarget = Targets.Players.Enabled and ent.Player
+		local isNPCTarget = Targets.NPCs.Enabled and ent.NPC
+
+		return isPlayerTarget or isNPCTarget
+	end
+
+	local function getPredictionTarget()
+		local root = getRoot()
+		if not root then return end
+
+		local bestEntity
+		local bestDistance = Range.Value
+
+		for _, ent in entitylib.List do
+			if isValidTarget(ent) then
+				local distance = (ent.RootPart.Position - root.Position).Magnitude
+
+				if distance <= bestDistance then
+					bestEntity = ent
+					bestDistance = distance
+				end
+			end
+		end
+
+		return bestEntity
+	end
+
+	local function getModelTransparency(confidence)
 		local baseTransparency = Transparency.Value / 100
-		local partTransparency = Confidence.Enabled and confidence and confidence < 0.8 and 1 or baseTransparency
+
+		if ConfidenceGuard.Enabled and confidence and confidence < 0.8 and not ShowLowConfidence.Enabled then
+			return 1
+		end
+
+		if ConfidenceGuard.Enabled and confidence and confidence < 0.8 then
+			return math.clamp(baseTransparency + 0.2, 0, 1)
+		end
+
+		return baseTransparency
+	end
+
+	local function stylePredictionModel(model, confidence, force)
+		if not model then return end
+
+		local partTransparency = getModelTransparency(confidence)
+
+		if not force and lastStyledTransparency == partTransparency then
+			return
+		end
+
+		lastStyledTransparency = partTransparency
+
 		for _, obj in model:GetDescendants() do
 			if obj:IsA('BasePart') then
 				obj.Anchored = true
@@ -721,85 +800,225 @@ run(function()
 				obj.Massless = true
 				obj.CastShadow = false
 				obj.Transparency = partTransparency
+
 			elseif obj:IsA('Decal') or obj:IsA('Texture') then
-				obj.Transparency = math.clamp(partTransparency + 0.1, 0, 1)
+				obj.Transparency = math.clamp(partTransparency + 0.08, 0, 1)
+
+			elseif obj:IsA('BillboardGui') or obj:IsA('SurfaceGui') then
+				obj.Enabled = false
+
+			elseif obj:IsA('ParticleEmitter') or obj:IsA('Trail') or obj:IsA('Beam') then
+				obj.Enabled = false
+
+			elseif obj:IsA('Highlight') then
+				obj.Enabled = false
+
 			elseif obj:IsA('Script') or obj:IsA('LocalScript') then
 				obj:Destroy()
 			end
 		end
 	end
 
-	local function getPredictionTarget()
-		if not entitylib.isAlive then return end
-		local root = entitylib.character.RootPart
-		local bestEntity, bestDistance = nil, Range.Value
-		for _, ent in entitylib.List do
-			if ent.Targetable and ent.Character and ent.RootPart and (Targets.Players.Enabled and ent.Player or Targets.NPCs.Enabled and ent.NPC) then
-				local distance = (ent.RootPart.Position - root.Position).Magnitude
-				if distance <= bestDistance then
-					bestEntity, bestDistance = ent, distance
-				end
-			end
-		end
-		return bestEntity
-	end
-
 	local function rebuildPredictionModel(ent)
 		cleanupPredictionModel()
-		if not (ent and ent.Character and ent.RootPart) then return end
+
+		if not isValidTarget(ent) then return end
+
 		local oldArchivable = ent.Character.Archivable
 		ent.Character.Archivable = true
+
 		local clone = ent.Character:Clone()
+
 		ent.Character.Archivable = oldArchivable
+
 		if not clone then return end
-		clone.Name = 'AetherV2TargetMovementPrediction'
-		stylePredictionModel(clone)
+
+		clone.Name = MODEL_NAME
+
+		for _, obj in clone:GetDescendants() do
+			if obj:IsA('Humanoid') then
+				obj.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+				obj.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+				obj.BreakJointsOnDeath = false
+			end
+		end
+
+		stylePredictionModel(clone, 1, true)
+
 		clone.Parent = gameCamera
 		predictionModel = clone
 		predictedEntity = ent
 	end
 
-	local function getPredictedCFrame(ent)
-		if not (ent and ent.RootPart and ent.Humanoid) then return end
+	local function addSample(ent)
 		local root = ent.RootPart
 		local humanoid = ent.Humanoid
 		local now = tick()
-		table.insert(samples, {Time = now, Position = root.Position, Velocity = root.AssemblyLinearVelocity, MoveDirection = humanoid.MoveDirection})
-		while #samples > 12 or (#samples > 0 and now - samples[1].Time > 0.65) do
+
+		table.insert(samples, {
+			Time = now,
+			Position = root.Position,
+			Velocity = root.AssemblyLinearVelocity,
+			MoveDirection = humanoid and humanoid.MoveDirection or Vector3.zero,
+		})
+
+		while #samples > MAX_SAMPLES or (#samples > 0 and now - samples[1].Time > SAMPLE_LIFETIME) do
 			table.remove(samples, 1)
 		end
+	end
 
-		local horizontalVelocity = root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
-		local movementIntent = humanoid.MoveDirection * math.max(humanoid.WalkSpeed, horizontalVelocity.Magnitude)
-		local sampleVelocity = horizontalVelocity
-		if #samples >= 2 then
-			local first = samples[1]
-			local elapsed = math.max(now - first.Time, 0.016)
-			sampleVelocity = ((root.Position - first.Position) / elapsed) * Vector3.new(1, 0, 1)
+	local function getSampleVelocity(currentPosition)
+		if #samples < 2 then
+			return Vector3.zero
 		end
 
-		local predictedVelocity = horizontalVelocity:Lerp(sampleVelocity, 0.35):Lerp(movementIntent, humanoid.MoveDirection.Magnitude > 0.05 and 0.25 or 0)
-		local predictionTime = math.clamp(Duration.Value / 100, 0.15, 1.5)
-		local predictedPosition = root.Position + (predictedVelocity * predictionTime)
+		local first = samples[1]
+		local elapsed = math.max(tick() - first.Time, 0.016)
 
-		if humanoid.FloorMaterial == Enum.Material.Air then
-			predictedPosition += Vector3.new(0, (root.AssemblyLinearVelocity.Y * predictionTime) - (workspace.Gravity * predictionTime * predictionTime * 0.5), 0)
-		else
-			local params = RaycastParams.new()
-			params.FilterDescendantsInstances = {ent.Character, predictionModel, entitylib.character.Character}
-			params.FilterType = Enum.RaycastFilterType.Exclude
-			local result = workspace:Raycast(predictedPosition + Vector3.new(0, 3, 0), Vector3.new(0, -12, 0), params)
-			if result then
-				predictedPosition = Vector3.new(predictedPosition.X, result.Position.Y + humanoid.HipHeight + (root.Size.Y / 2), predictedPosition.Z)
+		return ((currentPosition - first.Position) / elapsed) * Vector3.new(1, 0, 1)
+	end
+
+	local function getPredictionConfidence(predictedVelocity, realVelocity, humanoid)
+		local speedBase = math.max(humanoid and humanoid.WalkSpeed or 16, 16)
+		local velocityDifference = (predictedVelocity - realVelocity).Magnitude
+
+		local confidence = math.clamp(1 - (velocityDifference / speedBase), 0.2, 0.98)
+
+		if lastPredictionPosition then
+			local stability = (lastPredictionPosition - (predictedEntity.RootPart.Position + predictedVelocity * 0.35)).Magnitude
+
+			if stability < 3.5 then
+				confidence = math.min(confidence + 0.12, 0.98)
+			elseif stability > 10 then
+				confidence = math.max(confidence - 0.18, 0.2)
 			end
 		end
 
-		local confidence = math.clamp(1 - ((predictedVelocity - horizontalVelocity).Magnitude / math.max(humanoid.WalkSpeed, 16)), 0.2, 0.98)
-		if lastPrediction and (lastPrediction - predictedPosition).Magnitude < 3.5 then
-			confidence = math.min(confidence + 0.12, 0.98)
+		return confidence
+	end
+
+	local function groundSnapPosition(ent, position)
+		local root = ent.RootPart
+		local humanoid = ent.Humanoid
+
+		if not humanoid or humanoid.FloorMaterial == Enum.Material.Air then
+			return position
 		end
-		lastPrediction = predictedPosition
-		return CFrame.lookAlong(predictedPosition, root.CFrame.LookVector), confidence
+
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = {
+			ent.Character,
+			predictionModel,
+			entitylib.character and entitylib.character.Character,
+		}
+
+		local result = workspace:Raycast(
+			position + Vector3.new(0, 4, 0),
+			Vector3.new(0, -16, 0),
+			params
+		)
+
+		if result then
+			return Vector3.new(
+				position.X,
+				result.Position.Y + humanoid.HipHeight + (root.Size.Y / 2),
+				position.Z
+			)
+		end
+
+		return position
+	end
+
+	local function getPredictedCFrame(ent)
+		if not isValidTarget(ent) or not ent.Humanoid then return end
+
+		local root = ent.RootPart
+		local humanoid = ent.Humanoid
+
+		addSample(ent)
+
+		local horizontalVelocity = root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
+		local sampleVelocity = getSampleVelocity(root.Position)
+
+		local moveDirection = humanoid.MoveDirection
+		local intentVelocity = moveDirection * math.max(humanoid.WalkSpeed, horizontalVelocity.Magnitude)
+
+		local predictedVelocity = horizontalVelocity
+			:Lerp(sampleVelocity, 0.4)
+			:Lerp(intentVelocity, moveDirection.Magnitude > 0.05 and 0.28 or 0)
+
+		local predictionTime = math.clamp(Duration.Value / 100, 0.15, 1.5)
+
+		local predictedPosition = root.Position + (predictedVelocity * predictionTime)
+
+		if humanoid.FloorMaterial == Enum.Material.Air then
+			predictedPosition += Vector3.new(
+				0,
+				(root.AssemblyLinearVelocity.Y * predictionTime) - (workspace.Gravity * predictionTime * predictionTime * 0.5),
+				0
+			)
+		else
+			predictedPosition = groundSnapPosition(ent, predictedPosition)
+		end
+
+		local confidence = getPredictionConfidence(predictedVelocity, horizontalVelocity, humanoid)
+
+		lastPredictionPosition = predictedPosition
+
+		local lookVector = root.CFrame.LookVector
+		if predictedVelocity.Magnitude > 1 then
+			lookVector = predictedVelocity.Unit
+		end
+
+		local targetCFrame = CFrame.lookAlong(predictedPosition, lookVector)
+
+		if lastTargetCFrame then
+			local smoothAmount = math.clamp(Smoothness.Value / 100, 0, 0.95)
+			targetCFrame = lastTargetCFrame:Lerp(targetCFrame, 1 - smoothAmount)
+		end
+
+		lastTargetCFrame = targetCFrame
+
+		return targetCFrame, confidence
+	end
+
+	local function updatePrediction()
+		if not entitylib.isAlive then
+			cleanupPredictionModel()
+			clearSamples()
+			return
+		end
+
+		local ent = getPredictionTarget()
+
+		if ent ~= predictedEntity then
+			clearSamples()
+
+			if ent then
+				rebuildPredictionModel(ent)
+			else
+				cleanupPredictionModel()
+				return
+			end
+		end
+
+		if not ent or not isValidTarget(ent) then
+			cleanupPredictionModel()
+			clearSamples()
+			return
+		end
+
+		if not predictionModel or not predictionModel.Parent then
+			rebuildPredictionModel(ent)
+		end
+
+		local predictedCFrame, confidence = getPredictedCFrame(ent)
+
+		if predictionModel and predictedCFrame then
+			predictionModel:PivotTo(predictedCFrame)
+			stylePredictionModel(predictionModel, confidence)
+		end
 	end
 
 	MovementPrediction = vape.Categories.Render:CreateModule({
@@ -808,59 +1027,78 @@ run(function()
 			if callback then
 				MovementPrediction:Clean(entitylib.Events.EntityRemoved:Connect(function(ent)
 					if ent == predictedEntity then
-						table.clear(samples)
-						lastPrediction = nil
 						cleanupPredictionModel()
+						clearSamples()
 					end
 				end))
-				MovementPrediction:Clean(runService.RenderStepped:Connect(function()
-					if not entitylib.isAlive then
-						cleanupPredictionModel()
-						table.clear(samples)
-						lastPrediction = nil
-						return
-					end
 
-					local ent = getPredictionTarget()
-					if ent ~= predictedEntity then
-						table.clear(samples)
-						lastPrediction = nil
-						rebuildPredictionModel(ent)
-					end
-					if not ent then
-						cleanupPredictionModel()
-						return
-					end
-					if not predictionModel or not predictionModel.Parent then
-						rebuildPredictionModel(ent)
-					end
-					local predictedCFrame, confidence = getPredictedCFrame(ent)
-					if predictionModel and predictedCFrame then
-						predictionModel:PivotTo(predictedCFrame)
-						stylePredictionModel(predictionModel, confidence)
-					end
-				end))
+				MovementPrediction:Clean(runService.RenderStepped:Connect(updatePrediction))
 			else
-				table.clear(samples)
-				lastPrediction = nil
 				cleanupPredictionModel()
+				clearSamples()
 			end
 		end,
-		Tooltip = 'Shows a transparent replica where the nearest selected opponent or NPC is predicted to move next. Sudden manual direction changes cannot be predicted perfectly, but stable movement targets at least 80% confidence.',
+		Tooltip = 'Creates a transparent clone showing where the selected player or NPC is likely to move next based on velocity, movement direction, recent samples, gravity and ground position.',
 	})
-	Targets = MovementPrediction:CreateTargets({Players = true, NPCs = true})
-	Range = MovementPrediction:CreateSlider({Name = 'Range', Min = 10, Max = 300, Default = 80, Suffix = ' studs'})
-	Duration = MovementPrediction:CreateSlider({Name = 'Prediction Time', Min = 15, Max = 150, Default = 55, Suffix = 'cs'})
+
+	Targets = MovementPrediction:CreateTargets({
+		Players = true,
+		NPCs = true,
+	})
+
+	Range = MovementPrediction:CreateSlider({
+		Name = 'Range',
+		Min = 10,
+		Max = 300,
+		Default = 80,
+		Suffix = ' studs',
+	})
+
+	Duration = MovementPrediction:CreateSlider({
+		Name = 'Prediction Time',
+		Min = 15,
+		Max = 150,
+		Default = 55,
+		Suffix = ' cs',
+	})
+
+	Smoothness = MovementPrediction:CreateSlider({
+		Name = 'Smoothness',
+		Min = 0,
+		Max = 95,
+		Default = 35,
+		Suffix = '%',
+	})
+
 	Transparency = MovementPrediction:CreateSlider({
 		Name = 'Transparency',
 		Min = 20,
 		Max = 95,
 		Default = 65,
+		Suffix = '%',
 		Function = function()
-			if predictionModel then stylePredictionModel(predictionModel) end
+			lastStyledTransparency = nil
+			if predictionModel then
+				stylePredictionModel(predictionModel, 1, true)
+			end
 		end,
 	})
-	Confidence = MovementPrediction:CreateToggle({Name = '80% Confidence Guard', Default = true})
+
+	ConfidenceGuard = MovementPrediction:CreateToggle({
+		Name = '80% Confidence Guard',
+		Default = true,
+		Function = function()
+			lastStyledTransparency = nil
+		end,
+	})
+
+	ShowLowConfidence = MovementPrediction:CreateToggle({
+		Name = 'Show Low Confidence',
+		Default = false,
+		Function = function()
+			lastStyledTransparency = nil
+		end,
+	})
 end)
 
 run(function()
