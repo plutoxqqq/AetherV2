@@ -9581,17 +9581,8 @@ run(function()
     rayCheck.RespectCanCollide = true
     rayCheck.FilterType = Enum.RaycastFilterType.Include
     local projectileRemote = {InvokeServer = function() end}
-    local virtualInputManager = {
-        SendMouseButtonEvent = function() end,
-        SendKeyEvent = function() end
-    }
     task.spawn(function()
-        pcall(function()
-            projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
-        end)
-        pcall(function()
-            virtualInputManager = cloneref(game:GetService('VirtualInputManager'))
-        end)
+        projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
     end)
 
     local harpoonAbilities = {'harpoon', 'HARPOON', 'harpoon_throw', 'HARPOON_THROW', 'triton_harpoon', 'TRITON_HARPOON'}
@@ -9607,6 +9598,7 @@ run(function()
             return false
         end
 
+        local virtualInputManager = cloneref(game:GetService('VirtualInputManager'))
         local before = #store.selfProjectiles
         local viewport = camera.ViewportSize
         local original = camera.CFrame
@@ -9735,6 +9727,7 @@ run(function()
         if used and Recall.Enabled then
             task.spawn(function()
                 task.wait(1)
+                local virtualInputManager = cloneref(game:GetService('VirtualInputManager'))
                 virtualInputManager:SendKeyEvent(true, Enum.KeyCode.C, false, game)
                 task.wait()
                 virtualInputManager:SendKeyEvent(false, Enum.KeyCode.C, false, game)
