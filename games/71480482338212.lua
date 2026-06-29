@@ -9788,37 +9788,71 @@ run(function()
 	local velocity = root and root.Velocity or Vector3.zero
 	local horizontalVelocity = Vector3.new(velocity.X, 0, velocity.Z)
 	local fallSpeed = math.max(-velocity.Y, 0)
-	local fallTime = math.clamp(fallSpeed / workspace.Gravity, 0.15, 1.25)
-	local predictedPosition = originPosition + (horizontalVelocity * fallTime)
-	local samples = {originPosition, predictedPosition}
+	local samples = {}
 
-	for radius = 1, 36, 2 do
+	local function addSample(position)
+		table.insert(samples, position)
+	end
+
+	local function getAimPoint(ray, predictedPosition)
+		local hit = ray.Position + (ray.Normal * 0.35)
+		local part = ray.Instance
+		if part and part:IsA('BasePart') then
+			local size = part.Size
+			local localPredicted = part.CFrame:PointToObjectSpace(predictedPosition)
+			local edgeMargin = math.min(0.45, math.max(math.min(size.X, size.Z) * 0.2, 0.08))
+			local xLimit = math.max((size.X * 0.5) - edgeMargin, 0)
+			local zLimit = math.max((size.Z * 0.5) - edgeMargin, 0)
+			localPredicted = Vector3.new(math.clamp(localPredicted.X, -xLimit, xLimit), size.Y * 0.5 + 0.25, math.clamp(localPredicted.Z, -zLimit, zLimit))
+			hit = part.CFrame:PointToWorldSpace(localPredicted)
+		end
+		return hit
+	end
+
+	addSample(originPosition)
+	for time = 0.15, 2.4, 0.15 do
+		local predictedPosition = originPosition + (horizontalVelocity * time) + Vector3.new(0, (velocity.Y * time) - (workspace.Gravity * time * time * 0.5), 0)
+		local center = Vector3.new(predictedPosition.X, originPosition.Y, predictedPosition.Z)
+		addSample(center)
+		for radius = 1, 12, 1 do
+			for angle = 0, 315, 45 do
+				local radians = math.rad(angle)
+				addSample(center + Vector3.new(math.cos(radians) * radius, 0, math.sin(radians) * radius))
+			end
+		end
+	end
+
+	for radius = 16, 72, 4 do
 		for angle = 0, 315, 45 do
 			local radians = math.rad(angle)
-			table.insert(samples, predictedPosition + Vector3.new(math.cos(radians) * radius, 0, math.sin(radians) * radius))
+			addSample(originPosition + (horizontalVelocity * 0.65) + Vector3.new(math.cos(radians) * radius, 0, math.sin(radians) * radius))
 		end
 	end
 
 	for _, sample in samples do
-		local ray = workspace:Raycast(sample + Vector3.new(0, 72, 0), Vector3.new(0, -180, 0), rayCheck)
+		local ray = workspace:Raycast(sample + Vector3.new(0, 128, 0), Vector3.new(0, -420, 0), rayCheck)
 		if ray then
-			local horizontalDistance = (Vector3.new(ray.Position.X, originPosition.Y, ray.Position.Z) - Vector3.new(originPosition.X, originPosition.Y, originPosition.Z)).Magnitude
-			local predictedDistance = (Vector3.new(ray.Position.X, predictedPosition.Y, ray.Position.Z) - Vector3.new(predictedPosition.X, predictedPosition.Y, predictedPosition.Z)).Magnitude
-			local verticalDrop = math.max(originPosition.Y - ray.Position.Y, 0)
-			local score = horizontalDistance + (predictedDistance * 0.35) + (verticalDrop * 0.03)
+			local drop = math.max(originPosition.Y - ray.Position.Y, 1)
+			local timeToPlatform = math.clamp((math.sqrt((fallSpeed * fallSpeed) + (2 * workspace.Gravity * drop)) - fallSpeed) / workspace.Gravity, 0.05, 2.5)
+			local predictedPosition = originPosition + (horizontalVelocity * timeToPlatform)
+			local aimPoint = getAimPoint(ray, predictedPosition)
+			local horizontalDistance = (Vector3.new(aimPoint.X, originPosition.Y, aimPoint.Z) - Vector3.new(originPosition.X, originPosition.Y, originPosition.Z)).Magnitude
+			local predictedDistance = (Vector3.new(aimPoint.X, predictedPosition.Y, aimPoint.Z) - Vector3.new(predictedPosition.X, predictedPosition.Y, predictedPosition.Z)).Magnitude
+			local score = (predictedDistance * 1.35) + (horizontalDistance * 0.25) + (drop * 0.015)
 			if not bestScore or score < bestScore then
-				best, bestScore = ray.Position, score
+				best, bestScore = aimPoint, score
 			end
 		end
 	end
 	return best
     end
 
+
     TritonClutch = vape.Categories.Utility:CreateModule({
         Name = 'TritonClutch',
         Function = function(callback)
             if callback then
-                local lasty, check
+                local lasty, attempted
                 repeat
                     if entitylib.isAlive and (not Limit.Enabled or isHarpoonTool(store.hand.tool)) then
                         local root = entitylib.character.RootPart
@@ -9829,15 +9863,15 @@ run(function()
                             lasty = root.CFrame
                         end
                         if harpoon and root.Velocity.Y < -60 and not workspace:Raycast(root.Position, Vector3.new(0, -140, 0), rayCheck) then
-                            if not check then
-                                check = true
+                            if not attempted then
+                                attempted = true
                                 local ground = findNearGround(root.CFrame, root) or findNearGround(lasty and lasty + Vector3.new(0, 5, 0) or root.CFrame, root)
                                 if ground then
                                     useHarpoon(root.Position, ground, harpoon)
                                 end
                             end
                         else
-                            check = false
+                            attempted = false
                         end
                     end
                     task.wait(0.03)
