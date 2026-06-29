@@ -9912,6 +9912,7 @@ run(function()
     local BackDelay
     local Limit
     local Recall
+    local NoCamera
 
     local rayCheck = RaycastParams.new()
     rayCheck.RespectCanCollide = true
@@ -9944,6 +9945,7 @@ run(function()
 	virtualInputManager:SendMouseButtonEvent(viewport.X / 2, viewport.Y / 2, 0, true, game, 0)
 	task.wait()
 	virtualInputManager:SendMouseButtonEvent(viewport.X / 2, viewport.Y / 2, 0, false, game, 0)
+	camera.CFrame = original
 
 	local started = tick()
 	repeat
@@ -10074,8 +10076,8 @@ run(function()
 		hotbarSwitch(hotbar)
 	end
 
-	local used, clutchCheck
-	if clickHeldHarpoon(spot) then
+	local used, clutchCheck, recallWait
+	if not NoCamera.Enabled and clickHeldHarpoon(spot) then
 		clutchCheck = waitForHarpoonClutch
 		used = true
 	else
@@ -10091,52 +10093,80 @@ run(function()
 		})
 		clutchCheck = waitForHarpoonClutch
 	end
+
 	if used and Recall.Enabled then
-		task.spawn(function()
+		recallWait = function()
 			task.wait(1.25)
 			virtualInputManager:SendKeyEvent(true, Enum.KeyCode.C, false, game)
 			task.wait()
 			virtualInputManager:SendKeyEvent(false, Enum.KeyCode.C, false, game)
-		end)
+
+			local started, lastPosition, stable = tick(), nil, 0
+			repeat
+				task.wait(0.1)
+				local root = entitylib.isAlive and entitylib.character.RootPart
+				if root then
+					local currentPosition = root.Position
+					local moved = lastPosition and (currentPosition - lastPosition).Magnitude or math.huge
+					if tick() - started > 0.75 and moved < 1 and root.Velocity.Magnitude < 8 then
+						stable += 0.1
+						if stable >= 0.3 then
+							return true
+						end
+					else
+						stable = 0
+					end
+					lastPosition = currentPosition
+				end
+			until not TritonClutch.Enabled or tick() - started > 7
+			return false
+		end
 	end
 
 	if Back.Enabled and LandCheck.Enabled and clutchCheck then
 		clutchCheck()
 	end
 	if Back.Enabled and old and old.tool then
-		task.wait(BackDelay:GetRandomValue())
+		if recallWait then
+			recallWait()
+		else
+			task.wait(BackDelay:GetRandomValue())
+		end
 		switchItem(old.tool)
 		if Legit.Enabled and getHotbar(old.tool) then
 			hotbarSwitch(getHotbar(old.tool))
 		end
+	elseif recallWait then
+		task.spawn(recallWait)
 	end
     end
 
     local function findNearGround(origin, root)
-	local best, bestDistance
+	local best, bestScore
 	local originPosition = origin.Position
 	local velocity = root and root.Velocity or Vector3.zero
-	local directions = {
-		Vector3.zero,
-		Vector3.new(1, 0, 0),
-		Vector3.new(0, 0, 1),
-		Vector3.new(-1, 0, 0),
-		Vector3.new(0, 0, -1),
-		Vector3.new(1, 0, 1).Unit,
-		Vector3.new(-1, 0, 1).Unit,
-		Vector3.new(1, 0, -1).Unit,
-		Vector3.new(-1, 0, -1).Unit
-	}
+	local horizontalVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+	local fallSpeed = math.max(-velocity.Y, 0)
+	local fallTime = math.clamp(fallSpeed / workspace.Gravity, 0.15, 1.25)
+	local predictedPosition = originPosition + (horizontalVelocity * fallTime)
+	local samples = {originPosition, predictedPosition}
 
-	for _, direction in directions do
-		for distance = 0, 36, 3 do
-			local rayOrigin = originPosition + (direction * distance) + (Vector3.new(velocity.X, 0, velocity.Z) * 0.25) + Vector3.new(0, 64, 0)
-			local ray = workspace:Raycast(rayOrigin, Vector3.new(0, -160, 0), rayCheck)
-			if ray then
-				local rayDistance = (ray.Position - originPosition).Magnitude
-				if not bestDistance or rayDistance < bestDistance then
-					best, bestDistance = ray.Position, rayDistance
-				end
+	for radius = 1, 36, 2 do
+		for angle = 0, 315, 45 do
+			local radians = math.rad(angle)
+			table.insert(samples, predictedPosition + Vector3.new(math.cos(radians) * radius, 0, math.sin(radians) * radius))
+		end
+	end
+
+	for _, sample in samples do
+		local ray = workspace:Raycast(sample + Vector3.new(0, 72, 0), Vector3.new(0, -180, 0), rayCheck)
+		if ray then
+			local horizontalDistance = (Vector3.new(ray.Position.X, originPosition.Y, ray.Position.Z) - Vector3.new(originPosition.X, originPosition.Y, originPosition.Z)).Magnitude
+			local predictedDistance = (Vector3.new(ray.Position.X, predictedPosition.Y, ray.Position.Z) - Vector3.new(predictedPosition.X, predictedPosition.Y, predictedPosition.Z)).Magnitude
+			local verticalDrop = math.max(originPosition.Y - ray.Position.Y, 0)
+			local score = horizontalDistance + (predictedDistance * 0.35) + (verticalDrop * 0.03)
+			if not bestScore or score < bestScore then
+				best, bestScore = ray.Position, score
 			end
 		end
 	end
@@ -10144,10 +10174,10 @@ run(function()
     end
 
     TritonClutch = vape.Categories.Utility:CreateModule({
-	Name = 'Triton Clutch',
+	Name = 'TritonClutch',
 	Function = function(callback)
 		if callback then
-			local lastAttempt, lasty = 0
+			local lasty, check
 			repeat
 				if entitylib.isAlive and (not Limit.Enabled or isHarpoonTool(store.hand.tool)) then
 					local root = entitylib.character.RootPart
@@ -10168,7 +10198,7 @@ run(function()
 							end
 						end
 					else
-						lastAttempt = 0
+						check = false
 					end
 				end
 				task.wait(0.03)
@@ -10194,11 +10224,11 @@ run(function()
 			LandCheck.Object.Visible = callback
 		end
 	end,
-	Tooltip = 'Switches back to the last slot before the harpoon clutch'
+	Tooltip = 'Switches back to the previous slot after Recall finishes, or after the clutch delay when Recall is off'
     })
     LandCheck = TritonClutch:CreateToggle({
 	Name = 'Only after clutch',
-	Tooltip = 'Only switches back after the harpoon clutch activates',
+	Tooltip = 'Waits for the harpoon clutch before switching back; Recall still waits until the recall finishes',
 	Darker = true
     })
     BackDelay = TritonClutch:CreateTwoSlider({
@@ -10212,6 +10242,11 @@ run(function()
     Limit = TritonClutch:CreateToggle({
 	Name = 'Limit to items',
 	Tooltip = "Only throws Triton's harpoon when holding the harpoon or trident"
+    })
+    NoCamera = TritonClutch:CreateToggle({
+	Name = 'Prevent Camera Movement',
+	Tooltip = 'Uses server projectile logic instead of moving your camera for the click fallback',
+	Default = true
     })
     Recall = TritonClutch:CreateToggle({
 	Name = 'Recall',
