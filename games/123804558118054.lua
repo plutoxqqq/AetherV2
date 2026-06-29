@@ -17,7 +17,7 @@ end
 local function downloadFile(path, func)
 	if not isfile(path) then
 		local suc, res = pcall(function()
-			return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherCoreV2/'.. readfile('aethercorev2/profiles/commit.txt').. '/'.. select(1, path:gsub('aethercorev2/', '')), true)
+			return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'.. readfile('aetherv2/profiles/commit.txt').. '/'.. select(1, path:gsub('aetherv2/', '')), true)
 		end)
 		if not suc or res == '404: Not Found' then
 			error(res)
@@ -31,15 +31,15 @@ local function downloadFile(path, func)
 end
 
 vape.Place = 5938036553
-if isfile('aethercorev2/games/' .. vape.Place .. '.lua') then
-	loadstring(readfile('aethercorev2/games/' .. vape.Place .. '.lua'), tostring(vape.Place))()
+if isfile('aetherv2/games/' .. vape.Place .. '.lua') then
+	loadstring(readfile('aetherv2/games/' .. vape.Place .. '.lua'), tostring(vape.Place))()
 else
 	if not shared.VapeDeveloper then
 		local suc, res = pcall(function()
-			return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherCoreV2/'.. readfile('aethercorev2/profiles/commit.txt').. '/games/'.. vape.Place.. '.lua', true)
+			return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'.. readfile('aetherv2/profiles/commit.txt').. '/games/'.. vape.Place.. '.lua', true)
 		end)
 		if suc and res ~= '404: Not Found' then
-			loadstring(downloadFile('aethercorev2/games/' .. vape.Place .. '.lua'), tostring(vape.Place))()
+			loadstring(downloadFile('aetherv2/games/' .. vape.Place .. '.lua'), tostring(vape.Place))()
 		end
 	end
 end

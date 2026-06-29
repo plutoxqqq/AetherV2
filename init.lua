@@ -14,7 +14,7 @@ local delfile = delfile or function(file)
 end
 
 local function isLoadingScreenDisabled()
-	return isfile('aethercorev2/profiles/disableloading.txt') and readfile('aethercorev2/profiles/disableloading.txt') == 'true'
+	return isfile('aetherv2/profiles/disableloading.txt') and readfile('aetherv2/profiles/disableloading.txt') == 'true'
 end
 
 local function getLoadingScreenParent()
@@ -36,11 +36,11 @@ local function createLoadingScreen()
 	if isLoadingScreenDisabled() then return nil end
 	local parent = getLoadingScreenParent()
 	if not parent then return nil end
-	local existing = parent:FindFirstChild('AetherCoreLoading')
-	if existing and _G.AetherCoreSetLoadingStatus then return existing end
+	local existing = parent:FindFirstChild('AetherV2Loading')
+	if existing and _G.AetherV2SetLoadingStatus then return existing end
 
 	local screen = existing or Instance.new('ScreenGui')
-	screen.Name = 'AetherCoreLoading'
+	screen.Name = 'AetherV2Loading'
 	screen.IgnoreGuiInset = true
 	screen.ResetOnSpawn = false
 	screen.DisplayOrder = 2147483647
@@ -100,7 +100,7 @@ local function createLoadingScreen()
 	logo.BackgroundTransparency = 1
 	logo.ImageTransparency = 0.02
 	logo.ScaleType = Enum.ScaleType.Fit
-	logo.Image = isfile('aethercorev2/assets/new/loading.png') and (getcustomasset and getcustomasset('aethercorev2/assets/new/loading.png') or 'aethercorev2/assets/new/loading.png') or ''
+	logo.Image = isfile('aetherv2/assets/new/loading.png') and (getcustomasset and getcustomasset('aetherv2/assets/new/loading.png') or 'aetherv2/assets/new/loading.png') or ''
 	logo.Parent = card
 
 	local version = Instance.new('TextLabel')
@@ -112,7 +112,7 @@ local function createLoadingScreen()
 	version.Font = Enum.Font.GothamMedium
 	version.TextSize = 14
 	version.TextColor3 = Color3.fromRGB(190, 196, 220)
-	version.Text = isfile('aethercorev2/version.txt') and ('Version '..readfile('aethercorev2/version.txt')) or 'Version loading...'
+	version.Text = isfile('aetherv2/version.txt') and ('Version '..readfile('aetherv2/version.txt')) or 'Version loading...'
 	version.Parent = card
 
 	local status = Instance.new('TextLabel')
@@ -124,7 +124,7 @@ local function createLoadingScreen()
 	status.TextSize = 14
 	status.TextXAlignment = Enum.TextXAlignment.Left
 	status.TextColor3 = Color3.fromRGB(235, 238, 255)
-	status.Text = 'Starting AetherCore...'
+	status.Text = 'Starting AetherV2...'
 	status.Parent = card
 
 	local track = Instance.new('Frame')
@@ -167,34 +167,34 @@ local function createLoadingScreen()
 			screen:Destroy()
 		end
 	end
-	_G.AetherCoreLoadingScreen = screen
-	_G.AetherCoreCloseLoadingScreen = closeScreen
-	_G.AetherCoreSetLoadingStatus = function(text, progress)
+	_G.AetherV2LoadingScreen = screen
+	_G.AetherV2CloseLoadingScreen = closeScreen
+	_G.AetherV2SetLoadingStatus = function(text, progress)
 		if not screen.Parent then return end
 		lastProgress = math.clamp(progress or lastProgress, lastProgress, 1)
 		if status.Parent then status.Text = text end
 		if detail.Parent then detail.Text = math.floor(lastProgress * 100)..'% complete' end
 		if fill.Parent then fill.Size = UDim2.fromScale(lastProgress, 1) end
-		if version.Parent and isfile('aethercorev2/version.txt') then version.Text = 'Version '..readfile('aethercorev2/version.txt') end
-		if logo.Parent and logo.Image == '' and isfile('aethercorev2/assets/new/loading.png') then
-			logo.Image = getcustomasset and getcustomasset('aethercorev2/assets/new/loading.png') or 'aethercorev2/assets/new/loading.png'
+		if version.Parent and isfile('aetherv2/version.txt') then version.Text = 'Version '..readfile('aetherv2/version.txt') end
+		if logo.Parent and logo.Image == '' and isfile('aetherv2/assets/new/loading.png') then
+			logo.Image = getcustomasset and getcustomasset('aetherv2/assets/new/loading.png') or 'aetherv2/assets/new/loading.png'
 		end
 	end
 	return screen
 end
 
 local loadingScreen = createLoadingScreen()
-if not _G.AetherCoreSetLoadingStatus then
-	_G.AetherCoreSetLoadingStatus = function() end
+if not _G.AetherV2SetLoadingStatus then
+	_G.AetherV2SetLoadingStatus = function() end
 end
 
 local function downloadFile(path, func)
 	if not isfile(path) then
 		if not license.Closet then
-			_G.AetherCoreSetLoadingStatus('Downloading '..path, 0.35)
+			_G.AetherV2SetLoadingStatus('Downloading '..path, 0.35)
 		end
 		local suc, res = pcall(function()
-			return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'..readfile('aethercorev2/profiles/commit.txt')..'/'..select(1, path:gsub('aethercorev2/', '')), true)
+			return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'..readfile('aetherv2/profiles/commit.txt')..'/'..select(1, path:gsub('aetherv2/', '')), true)
 		end)
 		if not suc or res == '404: Not Found' then
 			error(res)
@@ -203,7 +203,7 @@ local function downloadFile(path, func)
 			res = '--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.\n'..res
 		end
 		writefile(path, res)
-		_G.AetherCoreSetLoadingStatus('Downloaded '..path, 0.55)
+		_G.AetherV2SetLoadingStatus('Downloaded '..path, 0.55)
 	end
 	return (func or readfile)(path)
 end
@@ -222,9 +222,9 @@ local function wipeFolder(path)
 end
 
 
-for _, folder in {'aethercorev2', 'aethercorev2/games', 'aethercorev2/profiles', 'aethercorev2/assets', 'aethercorev2/assets/new', 'aethercorev2/libraries', 'aethercorev2/guis', 'aethercorev2/configs'} do
+for _, folder in {'aetherv2', 'aetherv2/games', 'aetherv2/profiles', 'aetherv2/assets', 'aetherv2/assets/new', 'aetherv2/libraries', 'aetherv2/guis', 'aetherv2/configs'} do
 	if not isfolder(folder) then
-		_G.AetherCoreSetLoadingStatus('Creating '..folder, 0.18)
+		_G.AetherV2SetLoadingStatus('Creating '..folder, 0.18)
 		makefolder(folder)
 	end
 end
@@ -239,27 +239,27 @@ if not shared.VapeDeveloper then
 		commit = commit and subbed:sub(commit + 13, commit + 52) or nil
 		commit = commit and #commit == 40 and commit or 'main'
 	end
-	local oldCommit = isfile('aethercorev2/profiles/commit.txt') and readfile('aethercorev2/profiles/commit.txt') or ''
+	local oldCommit = isfile('aetherv2/profiles/commit.txt') and readfile('aetherv2/profiles/commit.txt') or ''
 	if oldCommit ~= commit then
 		if commit ~= 'main' and oldCommit ~= '' then
 			shared.updated = oldCommit
 		end
-		wipeFolder('aethercorev2')
-		wipeFolder('aethercorev2/games')
-		wipeFolder('aethercorev2/guis')
-		wipeFolder('aethercorev2/libraries')
+		wipeFolder('aetherv2')
+		wipeFolder('aetherv2/games')
+		wipeFolder('aetherv2/guis')
+		wipeFolder('aetherv2/libraries')
 	end
-	writefile('aethercorev2/profiles/commit.txt', commit)
+	writefile('aetherv2/profiles/commit.txt', commit)
 end
 
-if not isfile('aethercorev2/profiles/disableloading.txt') then
-	writefile('aethercorev2/profiles/disableloading.txt', 'false')
+if not isfile('aetherv2/profiles/disableloading.txt') then
+	writefile('aetherv2/profiles/disableloading.txt', 'false')
 end
 
-_G.AetherCoreSetLoadingStatus('Checking version...', 0.62)
-downloadFile('aethercorev2/version.txt')
-_G.AetherCoreSetLoadingStatus('Preparing loading artwork...', 0.70)
-pcall(downloadFile, 'aethercorev2/assets/new/loading.png')
+_G.AetherV2SetLoadingStatus('Checking version...', 0.62)
+downloadFile('aetherv2/version.txt')
+_G.AetherV2SetLoadingStatus('Preparing loading artwork...', 0.70)
+pcall(downloadFile, 'aetherv2/assets/new/loading.png')
 
-_G.AetherCoreSetLoadingStatus('Loading main script...', 0.82)
-return loadstring(downloadFile('aethercorev2/main.lua'), 'main')(license)
+_G.AetherV2SetLoadingStatus('Loading main script...', 0.82)
+return loadstring(downloadFile('aetherv2/main.lua'), 'main')(license)

@@ -248,7 +248,7 @@ local function createConfigManager(categoryapi)
 
 	-- Read a community config file (bundled), return decoded table
 	local function readBundledConfig(name)
-		local path = "aethercorev2/configs/"..name..".json"
+		local path = "aetherv2/configs/"..name..".json"
 		if not isfile(path) then return nil end
 		local raw = loadJson(path)
 		if not raw then return nil end
@@ -263,11 +263,11 @@ local function createConfigManager(categoryapi)
 	-- Download a bundled config from the repo then apply it
 	local function downloadAndApply(name, callback)
 		task.spawn(function()
-			local path = "aethercorev2/configs/"..name..".json"
+			local path = "aetherv2/configs/"..name..".json"
 			local suc, err = pcall(function()
 				local res = game:HttpGet(
-					"https://raw.githubusercontent.com/plutoxqqq/AetherCoreV2/"
-					..readfile("aethercorev2/profiles/commit.txt")
+					"https://raw.githubusercontent.com/plutoxqqq/AetherV2/"
+					..readfile("aetherv2/profiles/commit.txt")
 					.."/configs/"..name..".json", true
 				)
 				if res == "404: Not Found" then error("404") end
@@ -568,7 +568,7 @@ local function createConfigManager(categoryapi)
 
 		-- Sub-line
 		label({
-			text = opts.isCommunity and "AetherCore Team" or (opts.name == "default" and "Default" or "Local"),
+			text = opts.isCommunity and "AetherV2 Team" or (opts.name == "default" and "Default" or "Local"),
 			size = 10, col = MUTED,
 			pos = UDim2.fromOffset(52, 28), sz = UDim2.new(1, -110, 0, 14),
 			parent = row
@@ -686,7 +686,7 @@ local function createConfigManager(categoryapi)
 
 		label({text = meta and meta.label or name, size = 15, semi = true, col = WHITE,
 			pos = UDim2.fromOffset(62, 8), sz = UDim2.new(1, -74, 0, 22), parent = card})
-		label({text = bundled and "AetherCore Team" or "local config",
+		label({text = bundled and "AetherV2 Team" or "local config",
 			size = 10, col = MUTED, pos = UDim2.fromOffset(62, 30), sz = UDim2.new(1, -74, 0, 14), parent = card})
 		label({text = meta and meta.desc or (bundled and "Community configuration." or "Your saved local configuration."),
 			size = 10, col = MUTED, wrap = true,
@@ -808,7 +808,7 @@ local function createConfigManager(categoryapi)
 		end
 
 		for _, name in communityConfigs do
-			local installed = isfile("aethercorev2/configs/"..name..".json")
+			local installed = isfile("aetherv2/configs/"..name..".json")
 			makeRow(communityList, {
 				name = name,
 				meta = CONFIG_META[name],
@@ -831,7 +831,7 @@ local function createConfigManager(categoryapi)
 		statusMsg = "Applying "..selectedCommunity.."..."
 		refreshPreview()
 
-		local installed = isfile("aethercorev2/configs/"..selectedCommunity..".json")
+		local installed = isfile("aetherv2/configs/"..selectedCommunity..".json")
 		if installed then
 			-- Already on disk — apply directly
 			local data = readBundledConfig(selectedCommunity)
@@ -950,8 +950,8 @@ local function createConfigManager(categoryapi)
 		if isfile(getConfigPath(mainapi.Profile)) then
 			tab.config = readfile(getConfigPath(mainapi.Profile))
 		end
-		if isfile("aethercorev2/profiles/"..game.GameId..".gui.txt") then
-			tab.gui = readfile("aethercorev2/profiles/"..game.GameId..".gui.txt")
+		if isfile("aetherv2/profiles/"..game.GameId..".gui.txt") then
+			tab.gui = readfile("aetherv2/profiles/"..game.GameId..".gui.txt")
 		end
 		tab.game = tostring(game.PlaceId)
 		setclipboard(httpService:JSONEncode(tab))
@@ -975,7 +975,7 @@ local function createConfigManager(categoryapi)
 				end)
 				if result.gui then
 					pcall(function()
-						writefile("aethercorev2/profiles/"..game.GameId..".gui.txt", result.gui)
+						writefile("aetherv2/profiles/"..game.GameId..".gui.txt", result.gui)
 					end)
 				end
 				-- decode config for immediate apply

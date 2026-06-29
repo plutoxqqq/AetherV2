@@ -16,7 +16,7 @@ local isfile = isfile
 local function downloadFile(path, func)
 	if not isfile(path) then
 		local suc, res = pcall(function()
-			return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherCoreV2/' .. readfile('aethercorev2/profiles/commit.txt') .. '/' .. select(1, path:gsub('aethercorev2/', '')), true)
+			return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/' .. readfile('aetherv2/profiles/commit.txt') .. '/' .. select(1, path:gsub('aetherv2/', '')), true)
 		end)
 		if not suc or res == '404: Not Found' then
 			error(res)
@@ -73,7 +73,7 @@ local function addBlur(parent)
 	blur.Size = UDim2.new(1, 89, 1, 52)
 	blur.Position = UDim2.fromOffset(-48, -31)
 	blur.BackgroundTransparency = 1
-	blur.Image = getcustomasset('aethercorev2/assets/new/blur.png')
+	blur.Image = getcustomasset('aetherv2/assets/new/blur.png')
 	blur.ScaleType = Enum.ScaleType.Slice
 	blur.SliceCenter = Rect.new(52, 31, 261, 502)
 	blur.Parent = parent
@@ -224,7 +224,7 @@ vape:Clean(lplr.OnTeleport:Connect(function()
 	end
 end))
 
-vape.Libraries.string = loadstring(downloadFile('aethercorev2/libraries/string.lua'), 'string')()
+vape.Libraries.string = loadstring(downloadFile('aetherv2/libraries/string.lua'), 'string')()
 local frictionTable, oldfrict, entitylib = {}, {}
 local function updateVelocity()
 	if getTableSize(frictionTable) > 0 then
@@ -256,9 +256,9 @@ local function motorMove(target, cf)
 	task.delay(0, part.Destroy, part)
 end
 
-local hash = loadstring(downloadFile('aethercorev2/libraries/hash.lua'), 'hash')()
-local prediction = loadstring(downloadFile('aethercorev2/libraries/prediction.lua'), 'prediction')()
-entitylib = loadstring(downloadFile('aethercorev2/libraries/entity.lua'), 'entitylibrary')()
+local hash = loadstring(downloadFile('aetherv2/libraries/hash.lua'), 'hash')()
+local prediction = loadstring(downloadFile('aetherv2/libraries/prediction.lua'), 'prediction')()
+entitylib = loadstring(downloadFile('aetherv2/libraries/entity.lua'), 'entitylibrary')()
 local whitelist = {
 	customtags = {},
 	data = {WhitelistedUsers = {}},
@@ -553,7 +553,7 @@ run(function()
 
 	Radar = vape:CreateOverlay({
 		Name = 'Radar',
-		Icon = getcustomasset('aethercorev2/assets/new/radaricon.png'),
+		Icon = getcustomasset('aetherv2/assets/new/radaricon.png'),
 		Size = UDim2.fromOffset(14, 14),
 		Position = UDim2.fromOffset(12, 13),
 		Function = function(callback)
@@ -752,7 +752,7 @@ run(function()
 		local clone = ent.Character:Clone()
 		ent.Character.Archivable = oldArchivable
 		if not clone then return end
-		clone.Name = 'AetherCoreTargetMovementPrediction'
+		clone.Name = 'AetherV2TargetMovementPrediction'
 		stylePredictionModel(clone)
 		clone.Parent = gameCamera
 		predictionModel = clone
@@ -879,7 +879,7 @@ run(function()
 
 	SessionInfo = vape:CreateOverlay({
 		Name = 'Session Info',
-		Icon = getcustomasset('aethercorev2/assets/new/textguiicon.png'),
+		Icon = getcustomasset('aetherv2/assets/new/textguiicon.png'),
 		Size = UDim2.fromOffset(16, 12),
 		Position = UDim2.fromOffset(12, 14),
 		Function = function(callback)
@@ -955,8 +955,8 @@ run(function()
 	Hide = SessionInfo:CreateTextList({
 		Name = 'Blacklist',
 		Tooltip = 'Name of entry to hide.',
-		Icon = getcustomasset('aethercorev2/assets/new/blockedicon.png'),
-		Tab = getcustomasset('aethercorev2/assets/new/blockedtab.png'),
+		Icon = getcustomasset('aetherv2/assets/new/blockedicon.png'),
+		Tab = getcustomasset('aetherv2/assets/new/blockedtab.png'),
 		TabSize = UDim2.fromOffset(21, 16),
 		Color = Color3.fromRGB(250, 50, 56),
 	})
@@ -3967,7 +3967,7 @@ run(function()
 	arrow.BackgroundTransparency = 1
 	arrow.BorderSizePixel = 0
 	arrow.Visible = false
-	arrow.Image = getcustomasset('aethercorev2/assets/new/arrowmodule.png')
+	arrow.Image = getcustomasset('aetherv2/assets/new/arrowmodule.png')
 	arrow.ImageColor3 = entitylib.getEntityColor(ent) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
 	arrow.Parent = Folder
 	Reference[ent] = arrow
