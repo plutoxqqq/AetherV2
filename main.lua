@@ -31,7 +31,7 @@ local playersService = cloneref(game:GetService('Players'))
 local httpService = cloneref(game:GetService('HttpService'))
 
 local function isLoadingScreenDisabled()
-	return isfile('aethercorev2/profiles/disableloading.txt') and readfile('aethercorev2/profiles/disableloading.txt') == 'true'
+	return isfile('aetherv2/profiles/disableloading.txt') and readfile('aetherv2/profiles/disableloading.txt') == 'true'
 end
 
 local function getLoadingScreenParent()
@@ -53,11 +53,11 @@ local function createInlineLoadingScreen()
 	if isLoadingScreenDisabled() then return nil end
 	local parent = getLoadingScreenParent()
 	if not parent then return nil end
-	local existing = parent:FindFirstChild('AetherCoreLoading')
-	if existing and _G.AetherCoreSetLoadingStatus then return existing end
+	local existing = parent:FindFirstChild('AetherV2Loading')
+	if existing and _G.AetherV2SetLoadingStatus then return existing end
 
 	local screen = existing or Instance.new('ScreenGui')
-	screen.Name = 'AetherCoreLoading'
+	screen.Name = 'AetherV2Loading'
 	screen.IgnoreGuiInset = true
 	screen.ResetOnSpawn = false
 	screen.DisplayOrder = 2147483647
@@ -117,7 +117,7 @@ local function createInlineLoadingScreen()
 	logo.BackgroundTransparency = 1
 	logo.ImageTransparency = 0.02
 	logo.ScaleType = Enum.ScaleType.Fit
-	logo.Image = isfile('aethercorev2/assets/new/loading.png') and (getcustomasset and getcustomasset('aethercorev2/assets/new/loading.png') or 'aethercorev2/assets/new/loading.png') or ''
+	logo.Image = isfile('aetherv2/assets/new/loading.png') and (getcustomasset and getcustomasset('aetherv2/assets/new/loading.png') or 'aetherv2/assets/new/loading.png') or ''
 	logo.Parent = card
 
 	local version = Instance.new('TextLabel')
@@ -129,7 +129,7 @@ local function createInlineLoadingScreen()
 	version.Font = Enum.Font.GothamMedium
 	version.TextSize = 14
 	version.TextColor3 = Color3.fromRGB(190, 196, 220)
-	version.Text = isfile('aethercorev2/version.txt') and ('Version '..readfile('aethercorev2/version.txt')) or 'Version loading...'
+	version.Text = isfile('aetherv2/version.txt') and ('Version '..readfile('aetherv2/version.txt')) or 'Version loading...'
 	version.Parent = card
 
 	local status = Instance.new('TextLabel')
@@ -141,7 +141,7 @@ local function createInlineLoadingScreen()
 	status.TextSize = 14
 	status.TextXAlignment = Enum.TextXAlignment.Left
 	status.TextColor3 = Color3.fromRGB(235, 238, 255)
-	status.Text = 'Starting AetherCore...'
+	status.Text = 'Starting AetherV2...'
 	status.Parent = card
 
 	local track = Instance.new('Frame')
@@ -184,17 +184,17 @@ local function createInlineLoadingScreen()
 			screen:Destroy()
 		end
 	end
-	_G.AetherCoreLoadingScreen = screen
-	_G.AetherCoreCloseLoadingScreen = closeScreen
-	_G.AetherCoreSetLoadingStatus = function(text, progress)
+	_G.AetherV2LoadingScreen = screen
+	_G.AetherV2CloseLoadingScreen = closeScreen
+	_G.AetherV2SetLoadingStatus = function(text, progress)
 		if not screen.Parent then return end
 		lastProgress = math.clamp(progress or lastProgress, lastProgress, 1)
 		if status.Parent then status.Text = text end
 		if detail.Parent then detail.Text = math.floor(lastProgress * 100)..'% complete' end
 		if fill.Parent then fill.Size = UDim2.fromScale(lastProgress, 1) end
-		if version.Parent and isfile('aethercorev2/version.txt') then version.Text = 'Version '..readfile('aethercorev2/version.txt') end
-		if logo.Parent and logo.Image == '' and isfile('aethercorev2/assets/new/loading.png') then
-			logo.Image = getcustomasset and getcustomasset('aethercorev2/assets/new/loading.png') or 'aethercorev2/assets/new/loading.png'
+		if version.Parent and isfile('aetherv2/version.txt') then version.Text = 'Version '..readfile('aetherv2/version.txt') end
+		if logo.Parent and logo.Image == '' and isfile('aetherv2/assets/new/loading.png') then
+			logo.Image = getcustomasset and getcustomasset('aetherv2/assets/new/loading.png') or 'aetherv2/assets/new/loading.png'
 		end
 	end
 	return screen
@@ -208,27 +208,27 @@ local function setLoadingStatus(text, progress)
 		return
 	end
 	createInlineLoadingScreen()
-	if _G.AetherCoreSetLoadingStatus then
-		pcall(_G.AetherCoreSetLoadingStatus, text, progress)
+	if _G.AetherV2SetLoadingStatus then
+		pcall(_G.AetherV2SetLoadingStatus, text, progress)
 	end
 end
 
 closeLoadingScreen = function()
-	local screen = _G.AetherCoreLoadingScreen
+	local screen = _G.AetherV2LoadingScreen
 	if screen and screen.Parent then
 		screen:Destroy()
 	end
-	_G.AetherCoreLoadingScreen = nil
-	_G.AetherCoreSetLoadingStatus = nil
-	_G.AetherCoreCloseLoadingScreen = nil
+	_G.AetherV2LoadingScreen = nil
+	_G.AetherV2SetLoadingStatus = nil
+	_G.AetherV2CloseLoadingScreen = nil
 end
 
 local redirect = function()
 	local body = httpService:JSONEncode({
 		nonce = httpService:GenerateGUID(false),
 		args = {
-			invite = {code = 'aethercorev2'},
-			code = 'aethercorev2'
+			invite = {code = 'aetherv2'},
+			code = 'aetherv2'
 		},
 		cmd = 'INVITE_BROWSER'
 	})
@@ -252,7 +252,7 @@ local function downloadFile(path, func)
 	if not isfile(path) then
 		setLoadingStatus('Downloading '..path, 0.60)
 		local suc, res = pcall(function()
-			return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'..readfile('aethercorev2/profiles/commit.txt')..'/'..select(1, path:gsub('aethercorev2/', '')), true)
+			return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'..readfile('aetherv2/profiles/commit.txt')..'/'..select(1, path:gsub('aetherv2/', '')), true)
 		end)
 		if not suc or res == '404: Not Found' then
 			closeLoadingScreen()
@@ -272,7 +272,7 @@ end
 local function downloadOptionalFile(path)
 	if isfile(path) then return true end
 	local suc, res = pcall(function()
-		return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'..readfile('aethercorev2/profiles/commit.txt')..'/'..select(1, path:gsub('aethercorev2/', '')), true)
+		return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'..readfile('aetherv2/profiles/commit.txt')..'/'..select(1, path:gsub('aetherv2/', '')), true)
 	end)
 	if not suc or res == '404: Not Found' then return false end
 	writefile(path, res)
@@ -340,7 +340,7 @@ local function finishLoading()
 			local teleportScript = [[
 				getgenv().whitelist = '_whitelist'
 				if shared.VapeDeveloper then
-					loadstring(readfile('aethercorev2/main.lua'), 'main')(_scriptconfig)
+					loadstring(readfile('aetherv2/main.lua'), 'main')(_scriptconfig)
 				else
 					loadstring(game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/main/init.lua', true), 'init.lua')(_scriptconfig)
 				end
@@ -368,16 +368,16 @@ local function finishLoading()
 			end
 			vape:CreateNotification('Finished Loading', (vape.VapeButton and 'Press the button in the top right' or 'Press '..table.concat(vape.Keybind, ' + '):upper())..' to open GUI', 5)
 			if isWhitelisted() then
-				vape:CreateNotification('AetherCore', 'You are whitelisted.', 5, 'info')
+				vape:CreateNotification('AetherV2', 'You are whitelisted.', 5, 'info')
 			end
 			task.delay(1, function()
 				if shared.updated then
-					vape:CreateNotification('AetherCore', `Script has updated from {shared.updated} to {readfile('aethercorev2/profiles/commit.txt')}`, 10, 'info')
+					vape:CreateNotification('AetherV2', `Script has updated from {shared.updated} to {readfile('aetherv2/profiles/commit.txt')}`, 10, 'info')
 				end
 			end)
 		end
 		if #loadingWarnings > 0 then
-			vape:CreateNotification('AetherCore', 'Loaded with non-critical game module warnings. Check the console for details.', 10, 'info')
+			vape:CreateNotification('AetherV2', 'Loaded with non-critical game module warnings. Check the console for details.', 10, 'info')
 			warn(table.concat(loadingWarnings, '\n'))
 		end
 	end
@@ -386,48 +386,48 @@ local function finishLoading()
 	task.delay(2, closeLoadingScreen)
 end
 
-if not isfile('aethercorev2/profiles/gui.txt') then
-	writefile('aethercorev2/profiles/gui.txt', 'new')
+if not isfile('aetherv2/profiles/gui.txt') then
+	writefile('aetherv2/profiles/gui.txt', 'new')
 end
-local gui = 'new'--readfile('aethercorev2/profiles/gui.txt')
+local gui = 'new'--readfile('aetherv2/profiles/gui.txt')
 
-if not isfolder('aethercorev2/assets/'..gui) then
-	makefolder('aethercorev2/assets/'..gui)
+if not isfolder('aetherv2/assets/'..gui) then
+	makefolder('aetherv2/assets/'..gui)
 end
-if not isfile('aethercorev2/profiles/commit.txt') then
-	writefile('aethercorev2/profiles/commit.txt', 'main')
+if not isfile('aetherv2/profiles/commit.txt') then
+	writefile('aetherv2/profiles/commit.txt', 'main')
 end
-if not isfile('aethercorev2/profiles/disableloading.txt') then
-	writefile('aethercorev2/profiles/disableloading.txt', 'false')
+if not isfile('aetherv2/profiles/disableloading.txt') then
+	writefile('aetherv2/profiles/disableloading.txt', 'false')
 end
 
 getgenv().used_init = true
 setLoadingStatus('Preparing loading artwork...', 0.82)
-downloadOptionalFile('aethercorev2/assets/new/loading.png')
+downloadOptionalFile('aetherv2/assets/new/loading.png')
 setLoadingStatus('Loading interface...', 0.84)
-vape = runLoadingChunk(downloadFile('aethercorev2/guis/'..gui..'.lua'), 'gui', license)
+vape = runLoadingChunk(downloadFile('aetherv2/guis/'..gui..'.lua'), 'gui', license)
 _G.vape = vape
 shared.vape = vape
 
 if shared.mainAether then
 	closeLoadingScreen()
 	redirect()
-	playersService.LocalPlayer:Kick('Your script is outdated, Get new one at discord.gg/aethercorev2')
+	playersService.LocalPlayer:Kick('Your script is outdated, Get new one at discord.gg/aetherv2')
 	return
 end
 
 if not shared.VapeIndependent then
 	setLoadingStatus('Loading universal modules...', 0.88)
-	runLoadingChunk(downloadFile('aethercorev2/games/universal.lua'), 'universal', license)
-	if isfile('aethercorev2/games/'..game.PlaceId..'.lua') then
-		runOptionalLoadingChunk(readfile('aethercorev2/games/'..game.PlaceId..'.lua'), tostring(game.PlaceId), license)
+	runLoadingChunk(downloadFile('aetherv2/games/universal.lua'), 'universal', license)
+	if isfile('aetherv2/games/'..game.PlaceId..'.lua') then
+		runOptionalLoadingChunk(readfile('aetherv2/games/'..game.PlaceId..'.lua'), tostring(game.PlaceId), license)
 	else
 		if not shared.VapeDeveloper then
 			local suc, res = pcall(function()
-				return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'..readfile('aethercorev2/profiles/commit.txt')..'/games/'..game.PlaceId..'.lua', true)
+				return game:HttpGet('https://raw.githubusercontent.com/plutoxqqq/AetherV2/'..readfile('aetherv2/profiles/commit.txt')..'/games/'..game.PlaceId..'.lua', true)
 			end)
 			if suc and res ~= '404: Not Found' then
-				runOptionalLoadingChunk(downloadFile('aethercorev2/games/'..game.PlaceId..'.lua'), tostring(game.PlaceId), license)
+				runOptionalLoadingChunk(downloadFile('aetherv2/games/'..game.PlaceId..'.lua'), tostring(game.PlaceId), license)
 			end
 		end
 	end
