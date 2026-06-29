@@ -185,12 +185,12 @@ local function createConfigManager(categoryapi)
 
 	-- ── Config data ───────────────────────────────────────────────────────────
 	local CONFIG_META = {
-		cc            = { label = "CC",           desc = "Core legitimate config for everyday PvP.",                tags = {"Verified", "Safe"} },
+		cc            = { label = "Legit",        desc = "Core legitimate pre-config for everyday PvP.",           tags = {"Verified", "Safe"} },
 		legit         = { label = "Legit+",        desc = "Smooth legit setup with soft movement.",                   tags = {"Verified", "Low-Flag"} },
 		["bedwars sweat"] = { label = "BW Sweat", desc = "Tuned for BedWars wins — clean and reliable.",            tags = {"Featured", "Safe"} },
 		["sky pvp"]   = { label = "Sky PvP",       desc = "Aerial fight awareness and clean combat.",                tags = {"New", "Safe"} },
 		["utility stack"] = { label = "Util Stack",desc = "Quality-of-life modules stacked for every match.",       tags = {"Verified", "QOL"} },
-		rage          = { label = "Rage",           desc = "Max pressure, fast eliminations. Use in casual lobbies.", tags = {"Verified", "High-Risk"} },
+		rage          = { label = "Rage",         desc = "Max-pressure pre-config for fast eliminations. Use in casual lobbies.", tags = {"Verified", "High-Risk"} },
 	}
 
 	-- ── Apply a config: parse JSON → toggle modules ────────────────────────────
