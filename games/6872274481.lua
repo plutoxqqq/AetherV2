@@ -10147,7 +10147,7 @@ run(function()
 	Name = 'Triton Clutch',
 	Function = function(callback)
 		if callback then
-			local check, lasty
+			local lastAttempt, lasty = 0
 			repeat
 				if entitylib.isAlive and (not Limit.Enabled or isHarpoonTool(store.hand.tool)) then
 					local root = entitylib.character.RootPart
@@ -10168,7 +10168,7 @@ run(function()
 							end
 						end
 					else
-						check = false
+						lastAttempt = 0
 					end
 				end
 				task.wait(0.03)
