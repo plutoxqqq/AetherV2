@@ -10104,9 +10104,6 @@ run(function()
 		clutchCheck()
 	end
 	if Back.Enabled and old and old.tool then
-		if used and old.tool ~= item.tool then
-			task.wait(10)
-		end
 		task.wait(BackDelay:GetRandomValue())
 		switchItem(old.tool)
 		if Legit.Enabled and getHotbar(old.tool) then
@@ -10115,27 +10112,46 @@ run(function()
 	end
     end
 
-    local function findNearGround(origin)
-	for _, v in {Vector3.new(1, 0, 0), Vector3.new(0, 0, 1), Vector3.new(-1, 0, 0), Vector3.new(0, 0, -1)} do
-		for i = 1, 24 do
-			local ray = workspace:Raycast((origin.Position + (Vector3.yAxis * 3)) + (v * i), Vector3.new(0, -60, 0), rayCheck)
+    local function findNearGround(origin, root)
+	local best, bestDistance
+	local originPosition = origin.Position
+	local velocity = root and root.Velocity or Vector3.zero
+	local directions = {
+		Vector3.zero,
+		Vector3.new(1, 0, 0),
+		Vector3.new(0, 0, 1),
+		Vector3.new(-1, 0, 0),
+		Vector3.new(0, 0, -1),
+		Vector3.new(1, 0, 1).Unit,
+		Vector3.new(-1, 0, 1).Unit,
+		Vector3.new(1, 0, -1).Unit,
+		Vector3.new(-1, 0, -1).Unit
+	}
+
+	for _, direction in directions do
+		for distance = 0, 36, 3 do
+			local rayOrigin = originPosition + (direction * distance) + (Vector3.new(velocity.X, 0, velocity.Z) * 0.25) + Vector3.new(0, 64, 0)
+			local ray = workspace:Raycast(rayOrigin, Vector3.new(0, -160, 0), rayCheck)
 			if ray then
-				return ray.Position
+				local rayDistance = (ray.Position - originPosition).Magnitude
+				if not bestDistance or rayDistance < bestDistance then
+					best, bestDistance = ray.Position, rayDistance
+				end
 			end
 		end
 	end
-	return nil
+	return best
     end
 
     TritonClutch = vape.Categories.Utility:CreateModule({
-	Name = 'TritonClutch',
+	Name = 'Triton Clutch',
 	Function = function(callback)
 		if callback then
-			local check, lasty
+			local lastAttempt, lasty = 0
 			repeat
 				if entitylib.isAlive and (not Limit.Enabled or isHarpoonTool(store.hand.tool)) then
 					local root = entitylib.character.RootPart
-					local harpoon = getItem('harpoon')
+					local harpoon = getItem('harpoon') or getItem('triton_harpoon') or getItem('trident')
 					rayCheck.FilterDescendantsInstances = {store.map}
 					rayCheck.CollisionGroup = root.CollisionGroup
 
@@ -10143,23 +10159,23 @@ run(function()
 						lasty = root.CFrame
 					end
 
-					if harpoon and root.Velocity.Y < -100 and not workspace:Raycast(root.Position, Vector3.new(0, -200, 0), rayCheck) then
-						if not check then
-							check = true
-							local ground = findNearGround(root.CFrame + Vector3.new(0, 40, 0)) or findNearGround(lasty and lasty + Vector3.new(0, 5, 0) or root.CFrame)
+					if harpoon and root.Velocity.Y < -60 and not workspace:Raycast(root.Position, Vector3.new(0, -140, 0), rayCheck) then
+						if tick() - lastAttempt > 0.35 then
+							lastAttempt = tick()
+							local ground = findNearGround(root.CFrame, root) or findNearGround(lasty and lasty + Vector3.new(0, 5, 0) or root.CFrame, root)
 							if ground then
 								useHarpoon(root.Position, ground, harpoon)
 							end
 						end
 					else
-						check = false
+						lastAttempt = 0
 					end
 				end
-				task.wait(0.1)
+				task.wait(0.03)
 			until not TritonClutch.Enabled
 		end
 	end,
-	Tooltip = 'Clutches with harpoon like AutoPearl'
+	Tooltip = 'Automatically throws Triton\'s harpoon onto nearby ground after falling a certain distance.'
     })
 
     Legit = TritonClutch:CreateToggle({
