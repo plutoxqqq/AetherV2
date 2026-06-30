@@ -5100,7 +5100,7 @@ run(function()
     local old
 
     vape.Categories.Blatant:CreateModule({
-        Name = 'NoSlow',
+        Name = 'NoSlowdown',
         Function = function(callback)
             local modifier = bedwars.SprintController:getMovementStatusModifier()
             if callback then
@@ -11247,81 +11247,32 @@ end)
 run(function()
     local KrystalDisabler
     local oldUpdateMomentum
-    local momentumRemote
-    local patchedSignals = setmetatable({}, { __mode = 'k' })
-    local targetMomentum = 9e9
-
-    local function getController()
-        return bedwars and bedwars.GlacialSkaterController
-    end
-
-    local function setKrystalMomentum(controller)
-        controller = controller or getController()
-        if not controller then return end
-        controller.momentum = targetMomentum
-        controller.lastMomentumReport = targetMomentum
-        if momentumRemote then
-            pcall(function()
-                momentumRemote:SendToServer({ momentumValue = targetMomentum })
-            end)
-        end
-    end
-
-    local function patchMovementSignal(signal)
-        if not signal or not getconnections or not hookfunction then return end
-        for _, connection in getconnections(signal) do
-            local func = connection and connection.Function
-            if func and not patchedSignals[func] then
-                patchedSignals[func] = true
-                pcall(hookfunction, func, function() end)
-            end
-        end
-    end
-
-    local function patchCharacter(character)
-        local root = character and character.RootPart
-        if not root then return end
-        patchMovementSignal(root:GetPropertyChangedSignal('CFrame'))
-        patchMovementSignal(root:GetPropertyChangedSignal('Velocity'))
-        patchMovementSignal(root:GetPropertyChangedSignal('AssemblyLinearVelocity'))
-    end
 
     KrystalDisabler = vape.Categories.Kits:CreateModule({
-        Name = 'KrystalDisabler',
-        Function = function(callback)
-            local controller = getController()
-            if callback then
-                if not controller or type(controller.updateMomentum) ~= 'function' then
-                    notif('Krystal Disabler', 'Krystal controller is unavailable.', 5, 'warning')
-                    KrystalDisabler:Toggle()
-                    return
-                end
+	Name = 'KrystalDisabler',
+	Tooltip = 'Gives you max momentum forever',
+	Function = function(callback)
+		local controller = bedwars.GlacialSkaterController
+		if not controller or type(controller.updateMomentum) ~= 'function' then
+			notif('KrystalDisabler', 'Krystal controller is unavailable.', 5, 'warning')
+			if callback then KrystalDisabler:Toggle() end
+			return
+		end
 
-                momentumRemote = bedwars.Client and bedwars.Client:Get('MomentumUpdate')
-                if not oldUpdateMomentum then
-                    oldUpdateMomentum = controller.updateMomentum
-                    controller.updateMomentum = function(self, ...)
-                        local result = oldUpdateMomentum(self, ...)
-                        setKrystalMomentum(self)
-                        return result
-                    end
-                end
-
-                KrystalDisabler:Clean(entitylib.Events.LocalAdded:Connect(patchCharacter))
-                if entitylib.isAlive then
-                    patchCharacter(entitylib.character)
-                end
-                setKrystalMomentum(controller)
-                pcall(controller.updateMomentum, controller)
-            else
-                if controller and oldUpdateMomentum then
-                    controller.updateMomentum = oldUpdateMomentum
-                end
-                oldUpdateMomentum = nil
-                momentumRemote = nil
-            end
-        end,
-        Tooltip = 'Reduces Krystal lagbacks by keeping momentum reported and suppressing local movement correction listeners.'
+		if callback then
+			oldUpdateMomentum = controller.updateMomentum
+			controller.updateMomentum = function(self, ...)
+				self.momentum = 9e9
+				self.lastMomentumReport = 9e9
+				return oldUpdateMomentum(self, ...)
+			end
+		else
+			if oldUpdateMomentum then
+				controller.updateMomentum = oldUpdateMomentum
+				oldUpdateMomentum = nil
+			end
+		end
+	end
     })
 end)
 
