@@ -10352,20 +10352,18 @@ run(function()
 					rayCheck.FilterDescendantsInstances = {store.map}
 					rayCheck.CollisionGroup = root.CollisionGroup
 
-					if entitylib.character.Humanoid.FloorMaterial ~= Enum.Material.Air then
+					local onGround = entitylib.character.Humanoid.FloorMaterial ~= Enum.Material.Air
+					if onGround then
 						lasty = root.CFrame
+						attempted = false
 					end
 
-					if harpoon and root.Velocity.Y < -60 and not workspace:Raycast(root.Position, Vector3.new(0, -140, 0), rayCheck) then
-						if not attempted then
-							attempted = true
-							local ground = findNearGround(root.CFrame, root) or findNearGround(lasty and lasty + Vector3.new(0, 5, 0) or root.CFrame, root)
-							if ground then
-								useHarpoon(root.Position, ground, harpoon)
-							end
+					if not onGround and not attempted and harpoon and root.Velocity.Y < -60 and not workspace:Raycast(root.Position, Vector3.new(0, -140, 0), rayCheck) then
+						attempted = true
+						local ground = findNearGround(root.CFrame, root) or findNearGround(lasty and lasty + Vector3.new(0, 5, 0) or root.CFrame, root)
+						if ground then
+							useHarpoon(root.Position, ground, harpoon)
 						end
-					else
-						attempted = false
 					end
 				end
 				task.wait(0.03)
