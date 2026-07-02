@@ -3179,19 +3179,6 @@ run(function()
         return workspace:Blockcast(root.CFrame, Vector3.new(3, 3, 3), Vector3.new(0, castDistance, 0), rayCheck)
     end
 
-    local function findNearbyGround(root)
-        updateRay(root)
-        local origin = root.Position + Vector3.new(0, 18, 0)
-        for _, direction in {Vector3.zero, Vector3.new(1, 0, 0), Vector3.new(-1, 0, 0), Vector3.new(0, 0, 1), Vector3.new(0, 0, -1), Vector3.new(1, 0, 1), Vector3.new(-1, 0, 1), Vector3.new(1, 0, -1), Vector3.new(-1, 0, -1)} do
-            for distance = 0, 30, 3 do
-                local ray = workspace:Raycast(origin + (direction * distance), Vector3.new(0, -90, 0), rayCheck)
-                if ray then
-                    return ray.Position
-                end
-            end
-        end
-    end
-
     local function restoreTool(oldTool)
         if oldTool and oldTool.tool then
             task.delay(0.18, function()
@@ -3238,8 +3225,8 @@ run(function()
 
         lastBlockPlace = tick()
         local placePosition = bedwars.BlockController:getBlockPosition(root.Position - Vector3.new(0, 4, 0)) * 3
+        fallAnchorY = root.Position.Y
         if not getPlacedBlock(placePosition) and bedwars.placeBlock(placePosition, wool) then
-            fallAnchorY = root.Position.Y
             return true
         end
     end
@@ -3322,11 +3309,8 @@ run(function()
 
     local function telepearlClutch(root, ground, groundDistance)
         if usedPearl or not TelepearlClutch or not TelepearlClutch.Enabled then return end
-        if ground and groundDistance > 24 then return end
-
         local pearl = getItem('telepearl')
-        local safeGround = ground and ground.Position or findNearbyGround(root)
-        return pearl and safeGround and firePearl(root, safeGround + Vector3.new(0, 3, 0), pearl)
+        return pearl and ground and firePearl(root, ground.Position + Vector3.new(0, 3, 0), pearl)
     end
 
     local function legitClutch(root, humanoid, ground)
