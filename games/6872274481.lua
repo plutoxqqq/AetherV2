@@ -3132,34 +3132,201 @@ end)
 
 run(function()
     local NoFall
+    local Mode
+    local MinVelocity
+    local RayDistance
     local rayCheck = RaycastParams.new()
     rayCheck.RespectCanCollide = true
+    local disabledConnections = {}
+    local patchedController = {}
+    local lastGroundSpoof = 0
+    local lastAnchorPulse = 0
+
+    local function validCharacter()
+        if not entitylib.isAlive then return end
+        local character = entitylib.character
+        local root = character.RootPart or character.HumanoidRootPart
+        local humanoid = character.Humanoid
+        if root and humanoid and humanoid.Health > 0 then
+            return character, root, humanoid
+        end
+    end
+
+    local function getGround(root, character, distance)
+        rayCheck.FilterDescendantsInstances = {lplr.Character, gameCamera, AntiFallPart}
+        rayCheck.FilterType = Enum.RaycastFilterType.Exclude
+        rayCheck.CollisionGroup = root.CollisionGroup
+
+        local hipHeight = character.HipHeight or (character.Humanoid and character.Humanoid.HipHeight) or 2
+        local castDistance = -(distance + hipHeight + (root.Size.Y * 0.5))
+        return workspace:Blockcast(root.CFrame, Vector3.new(3, 3, 3), Vector3.new(0, castDistance, 0), rayCheck)
+    end
+
+    local function disconnectStateConnections(humanoid)
+        if not getconnections then return end
+        for _, connection in getconnections(humanoid.StateChanged) do
+            if connection and connection.Enabled then
+                connection:Disable()
+                table.insert(disabledConnections, connection)
+            end
+        end
+    end
+
+    local function restoreStateConnections()
+        for _, connection in disabledConnections do
+            pcall(function()
+                connection:Enable()
+            end)
+        end
+        table.clear(disabledConnections)
+    end
+
+    local function patchFallController(callback)
+        local controller = bedwars and bedwars.Knit and bedwars.Knit.Controllers and bedwars.Knit.Controllers.FallDamageController
+        if not controller then return end
+
+        if callback then
+            for _, key in {'KnitStart', 'onGroundHit', 'onImpact', 'takeFallDamage', 'calculateFallDamage'} do
+                local value = controller[key]
+                if type(value) == 'function' and not patchedController[key] then
+                    patchedController[key] = value
+                    controller[key] = function() end
+                end
+            end
+        else
+            for key, value in patchedController do
+                controller[key] = value
+            end
+            table.clear(patchedController)
+        end
+    end
+
+    local function groundSpoof(root)
+        if tick() - lastGroundSpoof < 0.18 then return end
+        lastGroundSpoof = tick()
+        local remoteName = remotes and remotes.GroundHit
+        local remote
+        if bedwars and bedwars.Client and remoteName and remoteName ~= '' then
+            pcall(function()
+                remote = bedwars.Client:Get(remoteName)
+            end)
+        end
+        remote = remote and remote.instance
+        if remote and remote.FireServer then
+            pcall(function()
+                remote:FireServer(nil, Vector3.new(0, math.max(root.AssemblyLinearVelocity.Y, -70), 0), workspace:GetServerTimeNow())
+            end)
+        end
+    end
+
+    local function cushionFall(root, ground)
+        if not ground then return end
+        local velocity = root.AssemblyLinearVelocity
+        if velocity.Y < -18 then
+            root.AssemblyLinearVelocity = Vector3.new(velocity.X, -18, velocity.Z)
+        end
+    end
+
+    local function anchorPulse(root)
+        if tick() - lastAnchorPulse < 0.45 then return end
+        lastAnchorPulse = tick()
+        local wasAnchored = root.Anchored
+        root.Anchored = true
+        task.delay(0.075, function()
+            if root and root.Parent then
+                root.Anchored = wasAnchored
+            end
+        end)
+    end
+
+    local function applyNoFall(character, root, humanoid)
+        local velocity = root.AssemblyLinearVelocity
+        local threshold = -(MinVelocity and MinVelocity.Value or 62)
+        if velocity.Y > threshold or humanoid.FloorMaterial ~= Enum.Material.Air then return 0.05 end
+
+        local ground = getGround(root, character, RayDistance and RayDistance.Value or 28)
+        local mode = Mode and Mode.Value or 'Hybrid'
+
+        if mode == 'Controller' or mode == 'Hybrid' then
+            patchFallController(true)
+            disconnectStateConnections(humanoid)
+        end
+
+        if mode == 'Cushion' or mode == 'Hybrid' then
+            cushionFall(root, ground)
+        end
+
+        if (mode == 'Ground Spoof' or mode == 'Hybrid') and ground then
+            groundSpoof(root)
+        end
+
+        if mode == 'Anchor Pulse' or (mode == 'Hybrid' and not ground and velocity.Y < -90) then
+            anchorPulse(root)
+        end
+
+        return ground and 0.025 or 0.04
+    end
 
     NoFall = vape.Categories.Blatant:CreateModule({
         Name = 'NoFall',
         Function = function(callback)
             if callback then
+                local currentHumanoid
+                NoFall:Clean(entitylib.Events.LocalAdded:Connect(function(ent)
+                    currentHumanoid = ent.Humanoid
+                    if Mode.Value == 'Controller' or Mode.Value == 'Hybrid' then
+                        task.delay(0.5, function()
+                            if NoFall.Enabled and currentHumanoid then
+                                disconnectStateConnections(currentHumanoid)
+                            end
+                        end)
+                    end
+                end))
+
+                patchFallController(true)
                 repeat
                     local waitDelay = 0.05
-                    if entitylib.isAlive then
-                        local root = entitylib.character.RootPart
-                        local humanoid = entitylib.character.Humanoid
-                        if root and humanoid and root.AssemblyLinearVelocity.Y < -65 then
-                            rayCheck.FilterDescendantsInstances = {lplr.Character, gameCamera, AntiFallPart}
-                            local ray = workspace:Raycast(root.Position, Vector3.new(0, -(entitylib.character.HipHeight + 18), 0), rayCheck)
-                            if not ray then
-                                humanoid:ChangeState(Enum.HumanoidStateType.Ragdoll)
-                                task.wait(0.08)
-                                humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                                waitDelay = 0.12
+                    local character, root, humanoid = validCharacter()
+                    if character then
+                        if humanoid ~= currentHumanoid then
+                            currentHumanoid = humanoid
+                            if Mode.Value == 'Controller' or Mode.Value == 'Hybrid' then
+                                disconnectStateConnections(humanoid)
                             end
                         end
+                        waitDelay = applyNoFall(character, root, humanoid)
                     end
                     task.wait(waitDelay)
                 until not NoFall.Enabled
+            else
+                patchFallController(false)
+                restoreStateConnections()
             end
         end,
-        Tooltip = 'Prevents taking fall damage.'
+        Tooltip = 'Prevents taking fall damage without requiring items, blocks, tools, or other modules.'
+    })
+    Mode = NoFall:CreateDropdown({
+        Name = 'Mode',
+        List = {'Hybrid', 'Controller', 'Cushion', 'Anchor Pulse', 'Ground Spoof'},
+        Function = function()
+            if NoFall.Enabled then
+                NoFall:Toggle()
+                NoFall:Toggle()
+            end
+        end,
+        Tooltip = 'Hybrid combines controller suppression, state connection suppression, fall cushioning, and emergency anchor pulsing.'
+    })
+    MinVelocity = NoFall:CreateSlider({
+        Name = 'Minimum Velocity',
+        Min = 35,
+        Max = 100,
+        Default = 62
+    })
+    RayDistance = NoFall:CreateSlider({
+        Name = 'Ground Check',
+        Min = 8,
+        Max = 60,
+        Default = 28
     })
 end)
 
