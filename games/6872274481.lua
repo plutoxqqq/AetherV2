@@ -3136,21 +3136,24 @@ run(function()
     local MinVelocity
     local GroundDistance
     local AnchorAttempts
-    local ClutchPriority
+    local BlockClutch
+    local TelepearlClutch
+    local DaoClutch
+    local JadeHammerClutch
+    local VoidAxeClutch
     local rayCheck = RaycastParams.new()
     rayCheck.RespectCanCollide = true
     rayCheck.FilterType = Enum.RaycastFilterType.Exclude
     local lastAnchor = 0
     local usedPearl = false
     local lastLegitUse = 0
-    local activeClutch
     local clutchBusyUntil = 0
+    local lastBlockPlace = 0
     local projectileRemote = {InvokeServer = function() end}
     task.spawn(function()
         projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
     end)
 
-    local clutchDefaults = {'Block', 'Telepearl', 'Dao', 'Jade Hammer', 'Void Axe'}
     local daoItems = {'wood_dao', 'stone_dao', 'iron_dao', 'diamond_dao', 'emerald_dao'}
 
     local function validCharacter()
@@ -3206,14 +3209,14 @@ run(function()
         local calc = prediction.SolveTrajectory(root.Position, meta.launchVelocity, meta.gravitationalAcceleration, spot, Vector3.zero, workspace.Gravity, 0, 0)
         if not calc then return end
 
-        usedPearl = true
         local oldTool = store.hand
         local hotbar = getHotbar(pearl.tool)
-        switchItem(pearl.tool)
+        switchItem(pearl.tool, 0.1)
         if hotbar then hotbarSwitch(hotbar) end
+        task.wait(0.03)
 
         local direction = CFrame.lookAt(root.Position, calc).LookVector * meta.launchVelocity
-        pcall(function()
+        local success = pcall(function()
             bedwars.ProjectileController:createLocalProjectile(meta, 'telepearl', 'telepearl', root.Position, nil, direction, {drawDurationSeconds = 1})
             projectileRemote:InvokeServer(pearl.tool, 'telepearl', 'telepearl', root.Position, root.Position, direction, httpService:GenerateGUID(true), {
                 drawDurationSeconds = 1,
@@ -3221,13 +3224,19 @@ run(function()
             }, workspace:GetServerTimeNow() - 0.045)
         end)
         restoreTool(oldTool)
-        return true
+        if success then
+            usedPearl = true
+            return true
+        end
     end
 
-    local function blockClutch(root, ground)
+    local function blockClutch(root)
+        if tick() - lastBlockPlace < 0.08 then return end
         local wool = getWool()
         if not wool then return end
-        local placePosition = bedwars.BlockController:getBlockPosition((ground and ground.Position or root.Position) + Vector3.new(0, 2, 0)) * 3
+
+        lastBlockPlace = tick()
+        local placePosition = bedwars.BlockController:getBlockPosition(root.Position - Vector3.new(0, 4, 0)) * 3
         return not getPlacedBlock(placePosition) and bedwars.placeBlock(placePosition, wool)
     end
 
@@ -3301,65 +3310,44 @@ run(function()
         end
     end
 
-    local clutchMethods = {
-        Telepearl = function(root, ground)
-            local pearl = getItem('telepearl')
-            local safeGround = ground and ground.Position or findNearbyGround(root)
-            return pearl and safeGround and firePearl(root, safeGround + Vector3.new(0, 3, 0), pearl)
-        end,
-        Block = function(root, ground)
-            return blockClutch(root, ground)
-        end,
-        ['Jade Hammer'] = jadeClutch,
-        Dao = daoClutch,
-        ['Void Axe'] = voidClutch
-    }
+    local function toolClutch(root)
+        if DaoClutch and DaoClutch.Enabled and daoClutch(root) then return true end
+        if JadeHammerClutch and JadeHammerClutch.Enabled and jadeClutch(root) then return true end
+        if VoidAxeClutch and VoidAxeClutch.Enabled and voidClutch(root) then return true end
+    end
 
-    local function getPriorityOrder()
-        local order = {}
-        local source = ClutchPriority and ClutchPriority.List or clutchDefaults
-        for _, name in source do
-            if clutchMethods[name] and not table.find(order, name) then
-                table.insert(order, name)
-            end
-        end
-        for _, name in clutchDefaults do
-            if not table.find(order, name) then
-                table.insert(order, name)
-            end
-        end
-        return order
+    local function telepearlClutch(root, ground, groundDistance)
+        if usedPearl or not TelepearlClutch or not TelepearlClutch.Enabled then return end
+        if ground and groundDistance > 24 then return end
+
+        local pearl = getItem('telepearl')
+        local safeGround = ground and ground.Position or findNearbyGround(root)
+        return pearl and safeGround and firePearl(root, safeGround + Vector3.new(0, 3, 0), pearl)
     end
 
     local function legitClutch(root, humanoid, ground)
         local now = tick()
-        if now < clutchBusyUntil or now - lastLegitUse < 0.12 then return end
+        if now < clutchBusyUntil or now - lastLegitUse < 0.06 then return end
         if humanoid.FloorMaterial ~= Enum.Material.Air then return end
 
         local groundDistance = ground and (root.Position.Y - ground.Position.Y) or math.huge
-        local enabled = ClutchPriority and ClutchPriority.ListEnabled or clutchDefaults
-        local order = getPriorityOrder()
         lastLegitUse = now
 
-        if activeClutch and table.find(enabled, activeClutch) then
-            if activeClutch ~= 'Block' or groundDistance > 7 then
-                if clutchMethods[activeClutch](root, ground) then
-                    clutchBusyUntil = tick() + (activeClutch == 'Block' and 0.18 or 0.65)
-                    return true
-                end
+        if BlockClutch and BlockClutch.Enabled and (not ground or groundDistance <= 14) then
+            if blockClutch(root) then
+                clutchBusyUntil = tick() + 0.08
+                return true
             end
-            activeClutch = nil
         end
 
-        for _, name in order do
-            if table.find(enabled, name) then
-                local canTry = name == 'Block' or (ground and groundDistance <= math.max(12, GroundDistance.Value * 0.5))
-                if canTry and clutchMethods[name](root, ground) then
-                    activeClutch = name
-                    clutchBusyUntil = tick() + (name == 'Block' and 0.18 or 0.65)
-                    return true
-                end
-            end
+        if TelepearlClutch and TelepearlClutch.Enabled and telepearlClutch(root, ground, groundDistance) then
+            clutchBusyUntil = tick() + 0.65
+            return true
+        end
+
+        if ground and groundDistance <= math.max(12, GroundDistance.Value * 0.5) and toolClutch(root) then
+            clutchBusyUntil = tick() + 0.65
+            return true
         end
     end
 
@@ -3375,8 +3363,11 @@ run(function()
         local legit = Mode and Mode.Value == 'Legit'
         local anchor = Mode and Mode.Value == 'Blatant'
         if AnchorAttempts and AnchorAttempts.Object then AnchorAttempts.Object.Visible = anchor end
-        if ClutchPriority and ClutchPriority.Object then ClutchPriority.Object.Visible = legit end
-        if ClutchPriority and ClutchPriority.Window then ClutchPriority.Window.Visible = legit and ClutchPriority.Window.Visible or false end
+        for _, option in {BlockClutch, TelepearlClutch, DaoClutch, JadeHammerClutch, VoidAxeClutch} do
+            if option and option.Object then
+                option.Object.Visible = legit
+            end
+        end
     end
 
     NoFall = vape.Categories.Blatant:CreateModule({
@@ -3405,8 +3396,8 @@ run(function()
                 usedPearl = false
                 lastAnchor = 0
                 lastLegitUse = 0
-                activeClutch = nil
                 clutchBusyUntil = 0
+                lastBlockPlace = 0
             end
         end,
         Tooltip = 'Prevents fall damage using legitimate clutch methods or blatant velocity cancellation.'
@@ -3421,7 +3412,7 @@ run(function()
                 NoFall:Toggle()
             end
         end,
-        Tooltip = 'Legit uses ordered clutch methods. Blatant cancels fall velocity repeatedly.'
+        Tooltip = 'Legit uses fixed clutch order: blocks, telepearls, then tools. Blatant cancels fall velocity repeatedly.'
     })
     MinVelocity = NoFall:CreateSlider({
         Name = 'Minimum Velocity',
@@ -3442,10 +3433,27 @@ run(function()
         Default = 5,
         Visible = false
     })
-    ClutchPriority = NoFall:CreateTextList({
-        Name = 'Clutch Priority',
-        Default = clutchDefaults,
-        Tooltip = 'Toggle the five clutch pills and drag them to reorder the Legit priority.'
+    BlockClutch = NoFall:CreateToggle({
+        Name = 'Blocks',
+        Default = true,
+        Tooltip = 'Places blocks directly beneath you shortly before fall damage would apply.'
+    })
+    TelepearlClutch = NoFall:CreateToggle({
+        Name = 'Telepearl',
+        Default = true,
+        Tooltip = 'Throws a telepearl to nearby safe ground after block clutching is unavailable.'
+    })
+    DaoClutch = NoFall:CreateToggle({
+        Name = 'Dao',
+        Default = true
+    })
+    JadeHammerClutch = NoFall:CreateToggle({
+        Name = 'Jade Hammer',
+        Default = true
+    })
+    VoidAxeClutch = NoFall:CreateToggle({
+        Name = 'Void Axe',
+        Default = true
     })
 
     setSettingsVisible()
