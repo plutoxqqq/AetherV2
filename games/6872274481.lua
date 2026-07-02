@@ -16794,7 +16794,8 @@ run(function()
 
 		if cannon:FindFirstChild('AimPrompt') then
 			cannon.AimPrompt:InputHoldBegin()
-			task.wait((cannon.AimPrompt.HoldDuration or 0) + runService.PostSimulation:Wait())
+			local holdDuration = cannon.AimPrompt.HoldDuration or 0
+			task.wait(holdDuration + runService.PostSimulation:Wait())
 		end
 
 		for _ = 1, 6 do
@@ -16808,7 +16809,8 @@ run(function()
 
 		if cannon:FindFirstChild('StopAimingPrompt') then
 			cannon.StopAimingPrompt:InputHoldBegin()
-			task.wait((cannon.StopAimingPrompt.HoldDuration or 0) + runService.PostSimulation:Wait())
+			local holdDuration = cannon.StopAimingPrompt.HoldDuration or 0
+			task.wait(holdDuration + runService.PostSimulation:Wait())
 		end
 
 		if LaunchDelay.Value > 0 then
@@ -16818,12 +16820,12 @@ run(function()
 		local launched = false
 		if cannon:FindFirstChild('LaunchSelfPrompt') then
 			cannon.LaunchSelfPrompt:InputHoldBegin()
-			task.wait((cannon.LaunchSelfPrompt.HoldDuration or 0) + runService.PostSimulation:Wait())
+			local holdDuration = cannon.LaunchSelfPrompt.HoldDuration or 0
+			task.wait(holdDuration + runService.PostSimulation:Wait())
 			launched = true
 		end
-		launched = pcall(function()
-			bedwars.CannonHandController:launchSelf(cannon)
-		end) or launched
+		local success = pcall(bedwars.CannonHandController.launchSelf, bedwars.CannonHandController, cannon)
+		launched = success or launched
 		if launched and BreakAfterLaunch.Enabled and block then
 			task.delay(0.15, function()
 				pcall(bedwars.breakBlock, block, true, true)
