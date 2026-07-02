@@ -10081,6 +10081,69 @@ run(function()
 end)
 
 
+
+run(function()
+    local CatVapeAntiLasso
+    local Chance
+    local Check
+
+    local random = Random.new()
+
+    local function shouldAnchor()
+	return random:NextNumber(1, 100) <= Chance.Value and (not Check.Enabled or entitylib.EntityPosition({
+		Range = 50,
+		Part = 'RootPart',
+		Players = true
+	}))
+    end
+
+    local function added(character)
+	if not character then
+		return
+	end
+
+	CatVapeAntiLasso:Clean(character.ChildAdded:Connect(function(accessory)
+		if accessory:IsA('Accessory') and accessory:FindFirstChild('Rope') and shouldAnchor() then
+			local root = character.PrimaryPart or character:FindFirstChild('HumanoidRootPart')
+			if root then
+				root.Anchored = true
+				accessory.Destroying:Once(function()
+					if root.Parent then
+						root.Anchored = false
+					end
+				end)
+			end
+		end
+	end))
+    end
+
+    CatVapeAntiLasso = vape.Categories.Utility:CreateModule({
+	Name = 'Anti Lasso',
+	Function = function(callback)
+		if callback then
+			CatVapeAntiLasso:Clean(entitylib.Events.LocalAdded:Connect(function(ent)
+				task.delay(1, function()
+					added(ent and ent.Character)
+				end)
+			end))
+			if entitylib.isAlive then
+				added(lplr.Character)
+			end
+		end
+	end,
+	Tooltip = 'Prevents you from getting pulled by lasso projectiles.'
+    })
+
+    Chance = CatVapeAntiLasso:CreateSlider({
+	Name = 'Chance',
+	Min = 0,
+	Max = 100,
+	Default = 100,
+	Suffix = '%'
+    })
+    Check = CatVapeAntiLasso:CreateToggle({Name = 'Only when targeting'})
+end)
+
 run(function()
     local AutoLasso
     local Targets
@@ -10721,6 +10784,162 @@ run(function()
     Recall = TritonClutch:CreateToggle({
 	Name = 'Recall',
 	Tooltip = 'Presses C to activate Recall / Go to base after clutching'
+    })
+end)
+
+
+run(function()
+    local CatVapeTritonClutch
+    local Legit
+    local Back
+    local BackDelay
+    local Limit
+
+    local rayCheck = RaycastParams.new()
+    rayCheck.RespectCanCollide = true
+    rayCheck.FilterType = Enum.RaycastFilterType.Include
+    local projectileRemote = {InvokeServer = function() end}
+    task.spawn(function()
+	projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
+    end)
+
+    local function fireHarpoon(pos, spot, item)
+	local hotbar, old = getHotbar(item.tool), store.hand
+
+	switchItem(item.tool)
+	if Legit.Enabled and hotbar then
+		hotbarSwitch(hotbar)
+	end
+
+	local meta = bedwars.ProjectileMeta.harpoon_projectile
+	local landed = false
+	if meta then
+		local calc = prediction.SolveTrajectory(pos, meta.launchVelocity, meta.gravitationalAcceleration, spot, Vector3.zero, workspace.Gravity, 0, 0)
+		if calc then
+			local dir = CFrame.lookAt(pos, calc).LookVector * meta.launchVelocity
+			local projectile
+			pcall(function()
+				projectile = bedwars.ProjectileController:createLocalProjectile(meta, 'harpoon_projectile', 'harpoon_projectile', pos, nil, dir, {drawDurationSeconds = 1})
+			end)
+			local success, res = pcall(function()
+				return projectileRemote:InvokeServer(
+					item.tool,
+					'harpoon_projectile',
+					'harpoon_projectile',
+					pos,
+					pos,
+					dir,
+					httpService:GenerateGUID(true),
+					{
+						drawDurationSeconds = 1,
+						shotId = httpService:GenerateGUID(false)
+					},
+					workspace:GetServerTimeNow() - 0.045
+				)
+			end)
+			task.spawn(function()
+				repeat
+					task.wait()
+				until not projectile or not projectile.Parent
+				landed = true
+			end)
+			if success and res then
+				pcall(function()
+					res.Parent = replicatedStorage
+				end)
+			end
+		else
+			landed = true
+		end
+	else
+		landed = true
+	end
+
+	repeat
+		task.wait()
+	until landed or not CatVapeTritonClutch.Enabled
+	if Back.Enabled and old and old.tool then
+		task.wait(BackDelay:GetRandomValue())
+		switchItem(old.tool)
+		if Legit.Enabled and getHotbar(old.tool) then
+			hotbarSwitch(getHotbar(old.tool))
+		end
+	end
+    end
+
+    local function findNearGround(origin)
+	for _, direction in {Vector3.new(1, 0, 0), Vector3.new(0, 0, 1), Vector3.new(-1, 0, 0), Vector3.new(0, 0, -1)} do
+		for i = 1, 24 do
+			local ray = workspace:Raycast((origin.Position + (Vector3.yAxis * 3)) + (direction * i), Vector3.new(0, -60, 0), rayCheck)
+			if ray then
+				return ray.Position
+			end
+		end
+	end
+	return nil
+    end
+
+    CatVapeTritonClutch = vape.Categories.Kits:CreateModule({
+	Name = 'Auto Triton',
+	Function = function(callback)
+		if callback then
+			local check, lasty
+			repeat
+				if entitylib.isAlive and (not Limit.Enabled or store.hand and store.hand.tool and store.hand.tool.Name == 'harpoon') then
+					local root = entitylib.character.RootPart
+					local harpoon = getItem('harpoon')
+					rayCheck.FilterDescendantsInstances = {store.map}
+					rayCheck.CollisionGroup = root.CollisionGroup
+
+					if entitylib.character.Humanoid.FloorMaterial ~= Enum.Material.Air then
+						lasty = root.CFrame
+					end
+
+					if harpoon and root.Velocity.Y < -60 and not workspace:Raycast(root.Position, Vector3.new(0, -200, 0), rayCheck) then
+						if not check then
+							check = true
+							local ground = findNearGround(root.CFrame + Vector3.new(0, 40, 0)) or findNearGround(lasty and lasty + Vector3.new(0, 5, 0) or root.CFrame)
+							if ground then
+								fireHarpoon(root.Position, ground, harpoon)
+							end
+						end
+					else
+						check = false
+					end
+				end
+				task.wait(0.1)
+			until not CatVapeTritonClutch.Enabled
+		end
+	end,
+	Tooltip = 'Automatically throws Triton trident onto nearby ground after falling a certain distance.'
+    })
+
+    Legit = CatVapeTritonClutch:CreateToggle({
+	Name = 'Legit Switch',
+	Tooltip = 'Visualizes the switching clientside',
+	Default = true
+    })
+    Back = CatVapeTritonClutch:CreateToggle({
+	Name = 'Switch back',
+	Default = true,
+	Function = function(callback)
+		if BackDelay then
+			BackDelay.Object.Visible = callback
+		end
+	end,
+	Tooltip = 'Switches back to the previous slot after throwing the harpoon'
+    })
+    BackDelay = CatVapeTritonClutch:CreateTwoSlider({
+	Name = 'Switch Back Delay',
+	Min = 0,
+	Max = 2,
+	DefaultMin = 0.1,
+	DefaultMax = 0.2,
+	Darker = true
+    })
+    Limit = CatVapeTritonClutch:CreateToggle({
+	Name = 'Limit to item',
+	Tooltip = 'Only throws the harpoon when holding a harpoon'
     })
 end)
 
