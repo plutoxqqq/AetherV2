@@ -3141,6 +3141,7 @@ run(function()
     local DaoClutch
     local JadeHammerClutch
     local VoidAxeClutch
+    local HealthCheck
     local rayCheck = RaycastParams.new()
     rayCheck.RespectCanCollide = true
     rayCheck.FilterType = Enum.RaycastFilterType.Exclude
@@ -3231,6 +3232,16 @@ run(function()
         end
     end
 
+    local function isFallFatal(root, humanoid, ground)
+        if not HealthCheck or not HealthCheck.Enabled then return true end
+        if not ground then return true end
+
+        local health = (lplr.Character and lplr.Character:GetAttribute('Health')) or humanoid.Health
+        local fallBlocks = math.max(0, ((fallAnchorY or root.Position.Y) - ground.Position.Y) / 3)
+        local estimatedDamage = math.max(0, fallBlocks - 6) * 5
+        return estimatedDamage >= health
+    end
+
     local function abilityClutch(item, ability, callback)
         if not item then return end
         local oldTool = store.hand
@@ -3307,6 +3318,16 @@ run(function()
         if VoidAxeClutch and VoidAxeClutch.Enabled and voidClutch(root) then return true end
     end
 
+    local function shouldToolClutch(root, humanoid, groundDistance)
+        if not groundDistance or groundDistance == math.huge then return false end
+        local verticalSpeed = math.abs(root.AssemblyLinearVelocity.Y)
+        if verticalSpeed <= 0 then return false end
+
+        local bodyClearance = (humanoid.HipHeight or 2) + (root.Size.Y * 0.5)
+        local remainingDistance = math.max(0, groundDistance - bodyClearance)
+        return remainingDistance <= 4.5 or (remainingDistance / verticalSpeed) <= 0.16
+    end
+
     local function telepearlClutch(root, ground, groundDistance)
         if usedPearl or not TelepearlClutch or not TelepearlClutch.Enabled then return end
         local pearl = getItem('telepearl')
@@ -3325,7 +3346,9 @@ run(function()
         fallAnchorY = fallAnchorY or root.Position.Y
         lastLegitUse = now
 
-        if BlockClutch and BlockClutch.Enabled and groundDistance > 21 and (fallAnchorY - root.Position.Y) >= 18 then
+        if not isFallFatal(root, humanoid, ground) then return end
+
+        if BlockClutch and BlockClutch.Enabled and groundDistance > 21 and (fallAnchorY - root.Position.Y) >= 15 then
             if blockClutch(root) then
                 clutchBusyUntil = tick() + 0.08
                 return true
@@ -3339,7 +3362,7 @@ run(function()
             return true
         end
 
-        if ground and groundDistance <= math.max(12, GroundDistance.Value * 0.5) and toolClutch(root) then
+        if ground and shouldToolClutch(root, humanoid, groundDistance) and toolClutch(root) then
             clutchBusyUntil = tick() + 0.65
             return true
         end
@@ -3375,12 +3398,14 @@ run(function()
                         if humanoid.FloorMaterial ~= Enum.Material.Air then
                             usedPearl = false
                         elseif Mode.Value == 'Legit' then
-                            local ground = getGround(root, character, GroundDistance and GroundDistance.Value or 30)
+                            local ground = getGround(root, character, HealthCheck and HealthCheck.Enabled and 300 or (GroundDistance and GroundDistance.Value or 30))
                             legitClutch(root, humanoid, ground)
                         elseif root.AssemblyLinearVelocity.Y <= -(MinVelocity and MinVelocity.Value or 60) then
-                            local ground = getGround(root, character, GroundDistance and GroundDistance.Value or 30)
-                            anchorClutch(root)
-                            waitDelay = 0.02
+                            local ground = getGround(root, character, HealthCheck and HealthCheck.Enabled and 300 or (GroundDistance and GroundDistance.Value or 30))
+                            if isFallFatal(root, humanoid, ground) then
+                                anchorClutch(root)
+                                waitDelay = 0.02
+                            end
                         end
                     end
                     task.wait(waitDelay)
@@ -3431,6 +3456,10 @@ run(function()
         Name = 'Blocks',
         Default = true,
         Tooltip = 'Places blocks directly beneath you shortly before fall damage would apply.'
+    })
+    HealthCheck = NoFall:CreateToggle({
+        Name = 'Health check',
+        Tooltip = 'Only clutches when the estimated fall damage would be lethal.'
     })
     TelepearlClutch = NoFall:CreateToggle({
         Name = 'Telepearl',
