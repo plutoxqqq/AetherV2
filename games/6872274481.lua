@@ -3137,7 +3137,6 @@ run(function()
     local GroundDistance
     local AnchorAttempts
     local ClutchPriority
-    local ClutchToggles = {}
     local rayCheck = RaycastParams.new()
     rayCheck.RespectCanCollide = true
     rayCheck.FilterType = Enum.RaycastFilterType.Exclude
@@ -3318,8 +3317,7 @@ run(function()
         lastLegitUse = tick()
 
         for _, name in getPriorityOrder() do
-            local toggle = ClutchToggles[name]
-            if toggle and toggle.Enabled and clutchMethods[name](root, ground) then
+            if ClutchPriority and table.find(ClutchPriority.ListEnabled, name) and clutchMethods[name](root, ground) then
                 return true
             end
         end
@@ -3344,9 +3342,7 @@ run(function()
         local anchor = Mode and Mode.Value == 'Anchor Lock'
         if AnchorAttempts and AnchorAttempts.Object then AnchorAttempts.Object.Visible = anchor end
         if ClutchPriority and ClutchPriority.Object then ClutchPriority.Object.Visible = legit end
-        for _, toggle in ClutchToggles do
-            if toggle.Object then toggle.Object.Visible = legit end
-        end
+        if ClutchPriority and ClutchPriority.Window then ClutchPriority.Window.Visible = legit and ClutchPriority.Window.Visible or false end
     end
 
     NoFall = vape.Categories.Blatant:CreateModule({
@@ -3423,18 +3419,52 @@ run(function()
         Default = 5,
         Visible = false
     })
-    for _, name in clutchDefaults do
-        ClutchToggles[name] = NoFall:CreateToggle({
-            Name = name..' Clutch',
-            Default = true,
-            Tooltip = 'Allows Legit Clutch to use '..name..' when it appears in the priority order.'
-        })
-    end
     ClutchPriority = NoFall:CreateTextList({
-        Name = 'Priority Order',
+        Name = 'Clutch Priority',
         Default = clutchDefaults,
-        Tooltip = 'Reorder this list to change Legit Clutch priority. The top method is attempted first.'
+        Tooltip = 'Drag the pills up or down to reorder them. Enabled pills are tried from top to bottom.'
     })
+
+    local function refreshPriorityDrag()
+        if not ClutchPriority or not ClutchPriority.Objects then return end
+        for index, object in ClutchPriority.Objects do
+            if object:GetAttribute('NoFallDrag') then continue end
+            object:SetAttribute('NoFallDrag', true)
+            object.InputBegan:Connect(function(inputObj)
+                if inputObj.UserInputType ~= Enum.UserInputType.MouseButton1 and inputObj.UserInputType ~= Enum.UserInputType.Touch then return end
+                local startIndex = table.find(ClutchPriority.List, object.Name) or index
+                local connection
+                connection = inputObj.Changed:Connect(function()
+                    if inputObj.UserInputState ~= Enum.UserInputState.End then return end
+                    if connection then connection:Disconnect() end
+
+                    local targetIndex = startIndex
+                    for i, pill in ClutchPriority.Objects do
+                        if inputObj.Position.Y >= pill.AbsolutePosition.Y and inputObj.Position.Y <= pill.AbsolutePosition.Y + pill.AbsoluteSize.Y then
+                            targetIndex = i
+                            break
+                        end
+                    end
+
+                    if targetIndex ~= startIndex then
+                        local moved = table.remove(ClutchPriority.List, startIndex)
+                        if moved then
+                            table.insert(ClutchPriority.List, targetIndex, moved)
+                            ClutchPriority:ChangeValue()
+                            task.defer(refreshPriorityDrag)
+                        end
+                    end
+                end)
+            end)
+        end
+    end
+
+    local oldPriorityChange = ClutchPriority.ChangeValue
+    ClutchPriority.ChangeValue = function(self, ...)
+        oldPriorityChange(self, ...)
+        task.defer(refreshPriorityDrag)
+    end
+    task.defer(refreshPriorityDrag)
     setSettingsVisible()
 end)
 
