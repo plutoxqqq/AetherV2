@@ -1257,16 +1257,12 @@ end)
 
 run(function()
     local Scaffold
-    local Clutch
     local Expand
     local Tower
     local Downwards
     local Diagonal
     local LimitItem
-    local ClutchMode
-    local clutchRay = RaycastParams.new()
     local adjacent, lastpos = {}, Vector3.zero
-    clutchRay.FilterType = Enum.RaycastFilterType.Exclude
     
     for x = -3, 3, 3 do
         for y = -3, 3, 3 do
@@ -1334,47 +1330,6 @@ run(function()
             if store.blocks[pos + v] then return true end
         end
         return false
-    end
-
-    local function getNearestAdjacentBlock(pos)
-        local closest, closestmag
-        for _, v in adjacent do
-            local check = pos + v
-            if store.blocks[check] then
-                local mag = (pos - check).Magnitude
-                if not closestmag or mag < closestmag then
-                    closest, closestmag = check, mag
-                end
-            end
-        end
-        return closest
-    end
-
-    local function getClutchPath(startpos, endpos, limit)
-        local path, currentpos = {}, startpos
-
-        for _ = 1, limit do
-            if currentpos == endpos then break end
-
-            local diff = endpos - currentpos
-            local step
-            if math.abs(diff.X) >= math.abs(diff.Z) and diff.X ~= 0 then
-                step = Vector3.new(math.sign(diff.X) * 3, 0, 0)
-            elseif diff.Z ~= 0 then
-                step = Vector3.new(0, 0, math.sign(diff.Z) * 3)
-            elseif diff.Y ~= 0 then
-                step = Vector3.new(0, math.sign(diff.Y) * 3, 0)
-            else
-                break
-            end
-
-            currentpos += step
-            if not store.blocks[currentpos] then
-                table.insert(path, currentpos)
-            end
-        end
-
-        return path
     end
     
     local function getBlock()
@@ -1446,60 +1401,6 @@ run(function()
         Default = true
     })
     LimitItem = Scaffold:CreateToggle({Name = 'Limit to items'})
-
-    Clutch = vape.Categories.Utility:CreateModule({
-        Name = 'Clutch',
-        Function = function(callback)
-            if callback then
-                repeat
-                    if entitylib.isAlive then
-                        local wool = getBlock()
-                        if wool then
-                            local root = entitylib.character.RootPart
-                            local targetpos = roundPos(root.Position - Vector3.new(0, entitylib.character.HipHeight + 1.5, 0))
-                            clutchRay.FilterDescendantsInstances = {lplr.Character, gameCamera}
-                            local floorRay = workspace:Raycast(root.Position, Vector3.new(0, -14, 0), clutchRay)
-                            if root.Velocity.Y < -4 and not store.blocks[targetpos] and not floorRay then
-                                local nearest = blockProximity(targetpos)
-                                if nearest then
-                                    local startpos = getNearestAdjacentBlock(roundPos(nearest)) or roundPos(nearest)
-                                    local limit = ClutchMode.Value == 'Blatant' and 12 or 5
-                                    local path = getClutchPath(startpos, targetpos, limit)
-                                    local block = skywars.ItemMeta[wool.Rewrite.Type:gsub('{TeamId}', skywars.TeamController:getPlayerTeamId(lplr) or 'White')]
-
-                                    if ClutchMode.Value == 'Blatant' then
-                                        for _, blockpos in path do
-                                            if checkAdjacent(blockpos) then
-                                                skywars.BlockController:placeBlock(blockpos, wool.Name, block, Vector3.zero)
-                                            end
-                                        end
-                                    else
-                                        for _, blockpos in path do
-                                            if checkAdjacent(blockpos) then
-                                                skywars.BlockController:placeBlock(blockpos, wool.Name, block, Vector3.zero)
-                                                break
-                                            end
-                                        end
-                                    end
-
-                                    table.clear(path)
-                                end
-                            end
-                        end
-                    end
-
-                    task.wait(ClutchMode.Value == 'Blatant' and 0.02 or 0.07)
-                until not Clutch.Enabled
-            end
-        end,
-        Tooltip = 'Attempts to save you from the void by placing blocks from the nearest wall.'
-    })
-    ClutchMode = Clutch:CreateDropdown({
-        Name = 'Mode',
-        List = {'Blatant', 'Legit'},
-        Default = 'Legit',
-        Tooltip = 'Blatant prioritizes speed and accuracy, while Legit keeps placements adjacent and believable.'
-    })
 end)
 
 --[[

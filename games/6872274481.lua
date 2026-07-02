@@ -11644,13 +11644,25 @@ end)
 
 run(function()
     local Scaffold
+    local Clutch
     local Expand
     local Tower
     local Downwards
     local Diagonal
     local LimitItem
     local Mouse
+    local ClutchMode
+    local clutchRay = RaycastParams.new()
     local adjacent, lastpos, label = {}, Vector3.zero
+    local faceAdjacent = {
+        Vector3.new(3, 0, 0),
+        Vector3.new(-3, 0, 0),
+        Vector3.new(0, 3, 0),
+        Vector3.new(0, -3, 0),
+        Vector3.new(0, 0, 3),
+        Vector3.new(0, 0, -3)
+    }
+    clutchRay.FilterType = Enum.RaycastFilterType.Exclude
 
     for x = -3, 3, 3 do
         for y = -3, 3, 3 do
@@ -11691,6 +11703,62 @@ run(function()
             end
         end
         return false
+    end
+
+    local function checkFaceAdjacent(pos)
+        for _, v in faceAdjacent do
+            if getPlacedBlock(pos + v) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function getNearestPlacedAnchor(pos)
+        local closest, closestmag
+        for x = -3, 3, 3 do
+            for y = -3, 3, 3 do
+                for z = -3, 3, 3 do
+                    local checkpos = roundPos(pos + Vector3.new(x, y, z))
+                    local block, blockpos = getPlacedBlock(checkpos)
+                    if block then
+                        blockpos *= 3
+                        local mag = (pos - blockpos).Magnitude
+                        if not closestmag or mag < closestmag then
+                            closest, closestmag = blockpos, mag
+                        end
+                    end
+                end
+            end
+        end
+        return closest
+    end
+
+    local function getClutchPath(startpos, endpos, limit)
+        local path, currentpos = {}, startpos
+
+        for _ = 1, limit do
+            if currentpos == endpos then break end
+
+            local diff = endpos - currentpos
+            local step
+            if math.abs(diff.X) >= math.abs(diff.Z) and diff.X ~= 0 then
+                step = Vector3.new(math.sign(diff.X) * 3, 0, 0)
+            elseif diff.Z ~= 0 then
+                step = Vector3.new(0, 0, math.sign(diff.Z) * 3)
+            elseif diff.Y ~= 0 then
+                step = Vector3.new(0, math.sign(diff.Y) * 3, 0)
+            else
+                break
+            end
+
+            currentpos += step
+            if not getPlacedBlock(currentpos) then
+                table.insert(path, currentpos)
+            end
+        end
+
+        return path
     end
 
     local function getScaffoldBlock()
@@ -11813,6 +11881,58 @@ run(function()
                 label = nil
             end
         end
+    })
+
+    Clutch = vape.Categories.Utility:CreateModule({
+        Name = 'Clutch',
+        Function = function(callback)
+            if callback then
+                repeat
+                    if entitylib.isAlive then
+                        local wool = getScaffoldBlock()
+                        if wool then
+                            local root = entitylib.character.RootPart
+                            local targetpos = roundPos(root.Position - Vector3.new(0, entitylib.character.HipHeight + 1.5, 0))
+                            clutchRay.FilterDescendantsInstances = {lplr.Character, gameCamera}
+
+                            if root.Velocity.Y < -4 and not getPlacedBlock(targetpos) and not workspace:Raycast(root.Position, Vector3.new(0, -14, 0), clutchRay) then
+                                local nearest = blockProximity(targetpos)
+                                local startpos = nearest and getNearestPlacedAnchor(nearest)
+                                if startpos then
+                                    local path = getClutchPath(startpos, targetpos, ClutchMode.Value == 'Blatant' and 12 or 5)
+
+                                    if ClutchMode.Value == 'Blatant' then
+                                        for _, blockpos in path do
+                                            if checkAdjacent(blockpos) then
+                                                task.spawn(bedwars.placeBlock, blockpos, wool, false)
+                                            end
+                                        end
+                                    else
+                                        for _, blockpos in path do
+                                            if checkFaceAdjacent(blockpos) then
+                                                task.spawn(bedwars.placeBlock, blockpos, wool, false)
+                                                break
+                                            end
+                                        end
+                                    end
+
+                                    table.clear(path)
+                                end
+                            end
+                        end
+                    end
+
+                    task.wait(ClutchMode.Value == 'Blatant' and 0.02 or 0.07)
+                until not Clutch.Enabled
+            end
+        end,
+        Tooltip = 'Attempts to save you from the void by placing blocks from the nearest wall.'
+    })
+    ClutchMode = Clutch:CreateDropdown({
+        Name = 'Mode',
+        List = {'Blatant', 'Legit'},
+        Default = 'Legit',
+        Tooltip = 'Blatant prioritizes speed and accuracy. Legit keeps placements adjacent and believable.'
     })
 end)
 
