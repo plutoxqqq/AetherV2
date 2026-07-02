@@ -3149,6 +3149,7 @@ run(function()
     local lastLegitUse = 0
     local clutchBusyUntil = 0
     local lastBlockPlace = 0
+    local fallAnchorY
     local projectileRemote = {InvokeServer = function() end}
     task.spawn(function()
         projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
@@ -3230,40 +3231,16 @@ run(function()
         end
     end
 
-    local function getBlockClutchPositions(root, humanoid, groundDistance)
-        local velocity = root.AssemblyLinearVelocity
-        local horizontalVelocity = Vector3.new(velocity.X, 0, velocity.Z)
-        local leadTime = math.clamp((groundDistance or 10) / math.max(math.abs(velocity.Y), 1), 0.04, 0.18)
-        local predicted = root.Position + (horizontalVelocity * leadTime)
-        local hipHeight = (humanoid and humanoid.HipHeight or 2) + (root.Size.Y * 0.5)
-        local baseHeight = math.clamp((groundDistance or 8) - hipHeight - 0.4, 3.4, 5.8)
-        local positions = {}
-
-        for _, offset in {
-            Vector3.zero,
-            horizontalVelocity.Magnitude > 1 and horizontalVelocity.Unit * 1.8 or Vector3.zero,
-            root.CFrame.LookVector * 1.8,
-            -root.CFrame.LookVector * 1.8,
-            root.CFrame.RightVector * 1.8,
-            -root.CFrame.RightVector * 1.8
-        } do
-            table.insert(positions, bedwars.BlockController:getBlockPosition(predicted + offset - Vector3.new(0, baseHeight, 0)) * 3)
-        end
-
-        return positions
-    end
-
-    local function blockClutch(root, humanoid, groundDistance)
-        if tick() - lastBlockPlace < 0.035 then return end
+    local function blockClutch(root)
+        if tick() - lastBlockPlace < 0.08 then return end
         local wool, amount = getWool()
         if not wool or (amount or 0) < 1 then return end
 
         lastBlockPlace = tick()
-        for _, placePosition in getBlockClutchPositions(root, humanoid, groundDistance) do
-            if not getPlacedBlock(placePosition) and bedwars.placeBlock(placePosition, wool) then
-                root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, math.max(root.AssemblyLinearVelocity.Y, -72), root.AssemblyLinearVelocity.Z)
-                return true
-            end
+        local placePosition = bedwars.BlockController:getBlockPosition(root.Position - Vector3.new(0, 4, 0)) * 3
+        if not getPlacedBlock(placePosition) and bedwars.placeBlock(placePosition, wool) then
+            fallAnchorY = root.Position.Y
+            return true
         end
     end
 
@@ -3355,17 +3332,23 @@ run(function()
     local function legitClutch(root, humanoid, ground)
         local now = tick()
         if now < clutchBusyUntil or now - lastLegitUse < 0.06 then return end
-        if humanoid.FloorMaterial ~= Enum.Material.Air then return end
+        if humanoid.FloorMaterial ~= Enum.Material.Air or root.AssemblyLinearVelocity.Y >= 0 then
+            fallAnchorY = root.Position.Y
+            return
+        end
 
         local groundDistance = ground and (root.Position.Y - ground.Position.Y) or math.huge
+        fallAnchorY = fallAnchorY or root.Position.Y
         lastLegitUse = now
 
-        if BlockClutch and BlockClutch.Enabled and ground and groundDistance <= math.clamp(math.abs(root.AssemblyLinearVelocity.Y) * 0.3, 14, GroundDistance.Value) then
-            if blockClutch(root, humanoid, groundDistance) then
-                clutchBusyUntil = tick() + 0.035
+        if BlockClutch and BlockClutch.Enabled and groundDistance > 21 and (fallAnchorY - root.Position.Y) >= 18 then
+            if blockClutch(root) then
+                clutchBusyUntil = tick() + 0.08
                 return true
             end
         end
+
+        if root.AssemblyLinearVelocity.Y > -(MinVelocity and MinVelocity.Value or 60) then return end
 
         if TelepearlClutch and TelepearlClutch.Enabled and telepearlClutch(root, ground, groundDistance) then
             clutchBusyUntil = tick() + 0.65
@@ -3407,14 +3390,13 @@ run(function()
                     if character then
                         if humanoid.FloorMaterial ~= Enum.Material.Air then
                             usedPearl = false
+                        elseif Mode.Value == 'Legit' then
+                            local ground = getGround(root, character, GroundDistance and GroundDistance.Value or 30)
+                            legitClutch(root, humanoid, ground)
                         elseif root.AssemblyLinearVelocity.Y <= -(MinVelocity and MinVelocity.Value or 60) then
                             local ground = getGround(root, character, GroundDistance and GroundDistance.Value or 30)
-                            if Mode.Value == 'Legit' then
-                                legitClutch(root, humanoid, ground)
-                            else
-                                anchorClutch(root)
-                                waitDelay = 0.02
-                            end
+                            anchorClutch(root)
+                            waitDelay = 0.02
                         end
                     end
                     task.wait(waitDelay)
@@ -3425,6 +3407,7 @@ run(function()
                 lastLegitUse = 0
                 clutchBusyUntil = 0
                 lastBlockPlace = 0
+                fallAnchorY = nil
             end
         end,
         Tooltip = 'Prevents fall damage using legitimate clutch methods or blatant velocity cancellation.'
