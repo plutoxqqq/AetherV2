@@ -5277,6 +5277,56 @@ run(function()
     rayParams.RespectCanCollide = true
     rayParams.FilterType = Enum.RaycastFilterType.Include
 
+    local function getTelepearlLanding(origin, velocity, gravity)
+        local last = origin
+        for i = 1, 240 do
+            local t = i / 60
+            local nextpos = origin + (velocity * t) - Vector3.new(0, gravity * t * t * 0.5, 0)
+            local ray = workspace:Raycast(last, nextpos - last, rayParams)
+            if ray then
+                return ray.Position
+            end
+            last = nextpos
+        end
+        return last
+    end
+
+    local function getBestTelepearlShot(localPosition, targetPosition, meta)
+        local best, bestDistance
+        local gravity = meta.gravitationalAcceleration or workspace.Gravity
+        rayParams.FilterDescendantsInstances = { workspace:WaitForChild('Map', 9e9) }
+        local offsets = {
+            Vector3.zero,
+            Vector3.new(0, 1.5, 0),
+            Vector3.new(0, -1.5, 0),
+            Vector3.new(1.5, 0, 0),
+            Vector3.new(-1.5, 0, 0),
+            Vector3.new(0, 0, 1.5),
+            Vector3.new(0, 0, -1.5)
+        }
+
+        for _, offset in offsets do
+            local desired = targetPosition + offset
+            local look = CFrame.new(localPosition, desired)
+            local shootPosition = (look * CFrame.new(Vector3.new(-bedwars.BowConstantsTable.RelX, -bedwars.BowConstantsTable.RelY, -bedwars.BowConstantsTable.RelZ))).Position
+            local calc = prediction.SolveTrajectory(shootPosition, meta.launchVelocity, gravity, targetPosition, Vector3.zero, workspace.Gravity, 0, 0, rayParams)
+            if calc then
+                local velocity = CFrame.lookAt(shootPosition, calc).LookVector * meta.launchVelocity
+                local landing = getTelepearlLanding(shootPosition, velocity, gravity)
+                local distance = (landing - targetPosition).Magnitude
+                if not bestDistance or distance < bestDistance then
+                    bestDistance = distance
+                    best = {
+                        direction = velocity,
+                        shootPosition = shootPosition
+                    }
+                end
+            end
+        end
+
+        return best
+    end
+
     local MouseTPs = {
 	Items = function(position)
 		local item = getItem('telepearl') or getItem('fireball')
@@ -5284,20 +5334,17 @@ run(function()
 		if item then
 			if item.itemType == 'telepearl' then
 				local meta = bedwars.ProjectileMeta.telepearl
-				local calc = prediction.SolveTrajectory(localPosition, meta.launchVelocity, meta.gravitationalAcceleration, position, Vector3.zero, workspace.Gravity, 0, 0)
-				if calc then
-					position = calc
-				end
+				local shot = getBestTelepearlShot(localPosition, position, meta)
+				if not shot then return false end
 
-				local shootPosition = (CFrame.new(localPosition, position) * CFrame.new(Vector3.new(-bedwars.BowConstantsTable.RelX, -bedwars.BowConstantsTable.RelY, -bedwars.BowConstantsTable.RelZ))).Position
 				switchItem(item.tool)
 				bedwars.Client:Get(remotes.FireProjectile):CallServerAsync(
 					item.tool,
 					'telepearl',
 					'telepearl',
-					shootPosition,
+					shot.shootPosition,
 					localPosition,
-					CFrame.lookAt(localPosition, position).LookVector * meta.launchVelocity,
+					shot.direction,
 					httpService:GenerateGUID(true),
 					{
 						drawDurationSeconds = 1,
@@ -5313,6 +5360,7 @@ run(function()
 				return true
 			elseif item.itemType == 'fireball' and (localPosition - Vector3.new(position.X, localPosition.Y, position.Z)).Magnitude <= 200 then
 				local root = entitylib.character.RootPart
+				local targetPosition = position + Vector3.new(0, entitylib.character.HipHeight or 2, 0)
 				local ray = workspace:Raycast(localPosition, Vector3.new(0, -1000, 0), rayParams)
 				if ray then
 					localPosition = ray.Position + Vector3.new(0, entitylib.character.HipHeight or 2, 0)
@@ -5329,12 +5377,12 @@ run(function()
 							if knockbackBoost >= 38 then
 								repeat
 									task.wait()
-								until (root.Position - position).Magnitude <= 1
+								until (root.Position - targetPosition).Magnitude <= 1
 							end
 						end
 					end))
 
-					local shootPosition = (CFrame.new(localPosition, position) * CFrame.new(Vector3.new(-bedwars.BowConstantsTable.RelX, -bedwars.BowConstantsTable.RelY, -bedwars.BowConstantsTable.RelZ))).Position
+					local shootPosition = (CFrame.new(localPosition, targetPosition) * CFrame.new(Vector3.new(-bedwars.BowConstantsTable.RelX, -bedwars.BowConstantsTable.RelY, -bedwars.BowConstantsTable.RelZ))).Position
 					switchItem(item.tool)
 					bedwars.Client:Get(remotes.FireProjectile):CallServerAsync(
 						item.tool,
@@ -5374,7 +5422,7 @@ run(function()
 				rayParams.FilterDescendantsInstances = { workspace:WaitForChild('Map', 9e9) }
 				local ray = cloneref(lplr:GetMouse()).UnitRay
 				ray = workspace:Raycast(ray.Origin, ray.Direction * 10000, rayParams)
-				position = ray and ray.Position + Vector3.new(0, entitylib.character.HipHeight or 2, 0)
+				position = ray and ray.Position
 			elseif Mode.Value == 'Player' then
 				local ent = entitylib.EntityMouse({
 					Range = math.huge,
@@ -11883,57 +11931,6 @@ run(function()
         end
     })
 
-    Clutch = vape.Categories.Utility:CreateModule({
-        Name = 'Clutch',
-        Function = function(callback)
-            if callback then
-                repeat
-                    if entitylib.isAlive then
-                        local wool = getScaffoldBlock()
-                        if wool then
-                            local root = entitylib.character.RootPart
-                            local targetpos = roundPos(root.Position - Vector3.new(0, entitylib.character.HipHeight + 1.5, 0))
-                            clutchRay.FilterDescendantsInstances = {lplr.Character, gameCamera}
-
-                            if root.Velocity.Y < -4 and not getPlacedBlock(targetpos) and not workspace:Raycast(root.Position, Vector3.new(0, -14, 0), clutchRay) then
-                                local nearest = blockProximity(targetpos)
-                                local startpos = nearest and getNearestPlacedAnchor(nearest)
-                                if startpos then
-                                    local path = getClutchPath(startpos, targetpos, ClutchMode.Value == 'Blatant' and 12 or 5)
-
-                                    if ClutchMode.Value == 'Blatant' then
-                                        for _, blockpos in path do
-                                            if checkAdjacent(blockpos) then
-                                                task.spawn(bedwars.placeBlock, blockpos, wool, false)
-                                            end
-                                        end
-                                    else
-                                        for _, blockpos in path do
-                                            if checkFaceAdjacent(blockpos) then
-                                                task.spawn(bedwars.placeBlock, blockpos, wool, false)
-                                                break
-                                            end
-                                        end
-                                    end
-
-                                    table.clear(path)
-                                end
-                            end
-                        end
-                    end
-
-                    task.wait(ClutchMode.Value == 'Blatant' and 0.02 or 0.07)
-                until not Clutch.Enabled
-            end
-        end,
-        Tooltip = 'Attempts to save you from the void by placing blocks from the nearest wall.'
-    })
-    ClutchMode = Clutch:CreateDropdown({
-        Name = 'Mode',
-        List = {'Blatant', 'Legit'},
-        Default = 'Legit',
-        Tooltip = 'Blatant prioritizes speed and accuracy. Legit keeps placements adjacent and believable.'
-    })
 end)
 
 run(function()
@@ -16722,296 +16719,144 @@ run(function()
 end)
 
 run(function()
-	local CannonHandController = bedwars.CannonHandController
-	local CannonController = bedwars.CannonController
-	local oldLaunchSelf = CannonHandController.launchSelf
-	local oldStopAiming = CannonController.stopAiming
-	local oldStartAiming = CannonController.startAiming
 	local AutoDavey
-	local AutoDaveyAutojump
-	local AutoDaveyAutoLaunch
-	local AutoDaveyAutoBreak
-	local AutoDaveyPickaxeCheck
-	local AutoDaveyAutoSwitch
+	local Range
+	local PlaceCannon
 	local LaunchDelay
-	local BreakDelay
-	local isLaunching = false
-	local didAutoLaunch = false
+	local BreakAfterLaunch
 
-	local function getCannonSlot()
-		for i, v in pairs(store.inventory.hotbar) do
-			if v.item then
-				local t = tostring(v.item.itemType):lower()
-				if t:find("cannon") then
-					return i - 1
-				end
-			end
-		end
-		return nil
+	local rayCheck = RaycastParams.new()
+	rayCheck.RespectCanCollide = true
+	rayCheck.FilterType = Enum.RaycastFilterType.Exclude
+
+	local function getMousePosition()
+		local mouseRay = cloneref(lplr:GetMouse()).UnitRay
+		rayCheck.FilterDescendantsInstances = {lplr.Character, gameCamera}
+		local ray = workspace:Raycast(mouseRay.Origin, mouseRay.Direction * 1000000, rayCheck)
+		return ray and ray.Position
 	end
 
-	local function hasWoodPickaxeOnly()
-		local bestTier = 0
-		for _, slot in pairs(store.inventory.hotbar) do
-			if slot.item then
-				local t = tostring(slot.item.itemType):lower()
-				if t == "wood_pickaxe" and bestTier < 1 then
-					bestTier = 1
-				elseif (t:find("pickaxe") or t:find("drill")) and t ~= "wood_pickaxe" then
-					bestTier = 2
-				end
-			end
-		end
-		return bestTier == 1
+	local function getCannonItem()
+		return getItem('cannon')
 	end
 
 	local function getNearestCannon()
-		if not entitylib.isAlive then return nil end
-		local nearest
-		local nearestDist = math.huge
-		for i, v in pairs(CannonController.getCannons()) do
-			pcall(function()
-				local dist = (v.Position - entitylib.character.RootPart.Position).Magnitude
-				if dist < nearestDist and dist < 30 then
-					nearestDist = dist
-					nearest = v
-				end
-			end)
+		if not entitylib.isAlive then return end
+		local nearest, nearestDistance
+		for _, cannon in bedwars.CannonController.getCannons() do
+			local distance = (entitylib.character.RootPart.Position - cannon.Position).Magnitude
+			if distance <= Range.Value and (not nearestDistance or distance < nearestDistance) then
+				nearest, nearestDistance = cannon, distance
+			end
 		end
 		return nearest
 	end
 
-	local function findCannonModel(pos)
-		local closest = nil
-		local closestDist = 8
-		for _, obj in store.blocks do
-			if obj and obj:IsA("BasePart") and obj.Name == "cannon" then
-				local dist = (obj.Position - pos).Magnitude
-				if dist < closestDist then
-					closestDist = dist
-					closest = obj
-				end
-			end
-		end
-		return closest
+	local function getCannonAim(cannon, targetPosition)
+		local origin = cannon.Position + Vector3.new(0, 2, 0)
+		local speed = 200
+		local calc = prediction.SolveTrajectory(origin, speed, workspace.Gravity, targetPosition, Vector3.zero, workspace.Gravity, entitylib.character.HipHeight or 2, 0)
+		return CFrame.lookAt(origin, calc or targetPosition).LookVector * speed
 	end
 
-	local function doBreakCannon(cannon)
-		if not entitylib.isAlive then return end
-		if not cannon or not cannon.Parent then return end
+	local function placeCannon()
+		local item = getCannonItem()
+		if not item then return end
+
+		local root = entitylib.character.RootPart
+		local placePosition = roundPos(root.Position - Vector3.new(0, entitylib.character.HipHeight + (root.Size.Y / 2) - 3, 0))
+		if getPlacedBlock(placePosition) then
+			placePosition = roundPos(root.Position + (root.CFrame.LookVector * 3) - Vector3.new(0, entitylib.character.HipHeight + (root.Size.Y / 2) - 3, 0))
+		end
+
+		if bedwars.placeBlock(placePosition, item.itemType, false) then
+			local timeout = tick() + 1
+			repeat
+				local cannon = getNearestCannon()
+				if cannon then return cannon end
+				task.wait()
+			until tick() > timeout
+		end
+	end
+
+	local function launchCannon(cannon, targetPosition)
 		local block, blockpos = getPlacedBlock(cannon.Position)
-		if block and block.Name == 'cannon' and
-		   (entitylib.character.RootPart.Position - block.Position).Magnitude < 30 then
-			pcall(bedwars.breakBlock, block, false, nil, true)
-		else
-			local directBlock = findCannonModel(cannon.Position)
-			if directBlock and directBlock.Parent then
-				pcall(bedwars.breakBlock, directBlock, false, nil, true)
-			end
-		end
-	end
+		if not blockpos then return false end
 
-	local function firstHitCannon(cannon)
-		if not entitylib.isAlive then return end
-		if not cannon or not cannon.Parent then return end
-		if hasWoodPickaxeOnly() then
-			doBreakCannon(cannon)
-		end
-	end
+		bedwars.Client:Get(remotes.CannonAim):SendToServer({
+			cannonBlockPos = blockpos,
+			lookVector = getCannonAim(cannon, targetPosition)
+		})
 
-	local function breakCannon(cannon, shootfunc)
-		if not entitylib.isAlive then
-			isLaunching = false
-			return shootfunc()
+		if LaunchDelay.Value > 0 then
+			task.wait(LaunchDelay.Value)
 		end
 
-		local cannonSlot = nil
-
-		if AutoDaveyAutoSwitch.Enabled and not isHoldingPickaxe() then
-			local pickaxeSlot = getPickaxeSlot()
-			if not pickaxeSlot then
-				notif("AutoDavey", "No pickaxe found in hotbar!", 3)
-				if AutoDaveyAutojump.Enabled and entitylib.isAlive and entitylib.character.Humanoid then
-					entitylib.character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-				end
-				isLaunching = false
-				return shootfunc()
-			end
-			cannonSlot = getCannonSlot()
-			if hotbarSwitch(pickaxeSlot) then
-				task.wait(0.05)
-			end
+		local launched = bedwars.Client:Get(remotes.CannonLaunch):CallServer({cannonBlockPos = blockpos})
+		if launched and BreakAfterLaunch.Enabled and block then
+			task.delay(0.15, function()
+				pcall(bedwars.breakBlock, block, true, true)
+			end)
 		end
-
-		if AutoDaveyPickaxeCheck.Enabled and not isHoldingPickaxe() then
-			notif("AutoDavey", "You need to HOLD a pickaxe to break cannons!", 3)
-			if AutoDaveyAutojump.Enabled and entitylib.isAlive and entitylib.character.Humanoid then
-				entitylib.character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-			end
-			isLaunching = false
-			return shootfunc()
-		end
-
-		if BreakDelay.Value > 0 then
-			task.wait(BreakDelay.Value)
-		end
-
-		local cannonRef = cannon
-		if AutoDaveyAutojump.Enabled and entitylib.isAlive and entitylib.character.Humanoid then
-			entitylib.character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-		end
-		shootfunc()
-		isLaunching = false
-
-		task.spawn(function()
-			task.wait(0.05)
-			doBreakCannon(cannonRef)
-			task.wait(0.35)
-			if cannonRef and cannonRef.Parent then
-				doBreakCannon(cannonRef)
-			end
-			if AutoDaveyAutoSwitch.Enabled and cannonSlot then
-				task.wait(0.05)
-				hotbarSwitch(cannonSlot)
-			end
-		end)
+		return launched
 	end
 
 	AutoDavey = vape.Categories.Kits:CreateModule({
 		Name = 'AutoDavey',
 		Function = function(callback)
 			if callback then
-				CannonHandController.launchSelf = function(...)
-					if isLaunching then
-						isLaunching = false
-						return oldLaunchSelf(...)
+				local targetPosition = getMousePosition()
+				if not targetPosition then
+					notif('AutoDavey', 'No mouse position found.', 5)
+				elseif entitylib.isAlive then
+					local cannon = getNearestCannon()
+					if not cannon and PlaceCannon.Enabled then
+						cannon = placeCannon()
 					end
-					isLaunching = true
-					if LaunchDelay.Value > 0 then
-						task.wait(LaunchDelay.Value)
-					end
-					if AutoDaveyAutoBreak.Enabled then
-						local cannon = getNearestCannon()
-						if cannon then
-							local args = {...}
-							breakCannon(cannon, function()
-								oldLaunchSelf(unpack(args))
-							end)
-							return
-						else
-							if AutoDaveyAutojump.Enabled and entitylib.isAlive and entitylib.character.Humanoid then
-								entitylib.character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-							end
-							local res = oldLaunchSelf(...)
-							isLaunching = false
-							return res
+
+					if cannon then
+						if not launchCannon(cannon, targetPosition) then
+							notif('AutoDavey', 'Failed to launch the cannon.', 5)
 						end
 					else
-						if AutoDaveyAutojump.Enabled and entitylib.isAlive and entitylib.character.Humanoid then
-							entitylib.character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-						end
-						local res = oldLaunchSelf(...)
-						isLaunching = false
-						return res
+						notif('AutoDavey', 'No cannon found or available to place.', 5)
 					end
 				end
 
-				local aimedCannon = nil
-				CannonController.startAiming = function(...)
-					didAutoLaunch = false
-					isLaunching = false
-					local result = oldStartAiming(...)
-					aimedCannon = getNearestCannon()
-					return result
+				if AutoDavey.Enabled then
+					AutoDavey:Toggle()
 				end
-
-				CannonController.stopAiming = function(...)
-					local cannon = aimedCannon or getNearestCannon()
-					local result = oldStopAiming(...)
-					aimedCannon = nil
-					isLaunching = false
-					if AutoDaveyAutoLaunch.Enabled and not didAutoLaunch then
-						didAutoLaunch = true
-						if AutoDaveyAutoBreak.Enabled and AutoDaveyPickaxeCheck.Enabled and not isHoldingPickaxe() and not AutoDaveyAutoSwitch.Enabled then
-							notif("AutoDavey", "Hold a pickaxe to auto-break!", 3)
-							return result
-						end
-						if cannon then
-							task.spawn(function()
-								pcall(CannonHandController.launchSelf, CannonHandController, cannon)
-							end)
-						end
-					end
-					return result
-				end
-
-				local firstHitDebounce = {}
-				AutoDavey:Clean(workspace.DescendantAdded:Connect(function(obj)
-					if not (obj:IsA("BasePart") and obj.Name == "cannon") then return end
-					if firstHitDebounce[obj] then return end
-					firstHitDebounce[obj] = true
-					task.spawn(function()
-						task.wait(0.5)
-						if AutoDaveyAutoBreak.Enabled and hasWoodPickaxeOnly() then
-							local dist = entitylib.isAlive
-								and (entitylib.character.RootPart.Position - obj.Position).Magnitude
-								or math.huge
-							if dist < 20 and obj.Parent then
-								firstHitCannon(obj)
-							end
-						end
-						firstHitDebounce[obj] = nil
-					end)
-				end))
-			else
-				CannonHandController.launchSelf = oldLaunchSelf
-				CannonController.stopAiming = oldStopAiming
-				CannonController.startAiming = oldStartAiming
-				isLaunching = false
-				didAutoLaunch = false
 			end
 		end,
+		Tooltip = 'Uses or places a Davey cannon, aims it at your mouse, fires, then turns off.'
 	})
 
+	Range = AutoDavey:CreateSlider({
+		Name = 'Cannon Range',
+		Min = 5,
+		Max = 30,
+		Default = 18,
+		Suffix = function(val)
+			return val == 1 and 'stud' or 'studs'
+		end
+	})
 	LaunchDelay = AutoDavey:CreateSlider({
 		Name = 'Launch Delay',
 		Min = 0,
-		Max = 2,
-		Default = 0,
-		Decimal = 10,
-		Suffix = 's',
+		Max = 1,
+		Default = 0.05,
+		Decimal = 100,
+		Suffix = 's'
 	})
-	BreakDelay = AutoDavey:CreateSlider({
-		Name = 'Break Delay',
-		Min = 0,
-		Max = 2,
-		Default = 0,
-		Decimal = 10,
-		Suffix = 's',
-	})
-
-	AutoDaveyAutojump = AutoDavey:CreateToggle({
-		Name = 'Auto Jump',
+	PlaceCannon = AutoDavey:CreateToggle({
+		Name = 'Place Cannon',
 		Default = true,
+		Tooltip = 'Places a cannon when no nearby Davey cannon is available.'
 	})
-	AutoDaveyAutoLaunch = AutoDavey:CreateToggle({
-		Name = 'Auto Launch',
-		Default = true,
-		Tooltip = 'automatically lauches u after your done aiming'
-	})
-	AutoDaveyAutoBreak = AutoDavey:CreateToggle({
-		Name = 'Auto Break',
-		Default = true,
-		Tooltip = 'auto breaks cannon when you lauch'
-	})
-	AutoDaveyPickaxeCheck = AutoDavey:CreateToggle({
-		Name = 'Pickaxe Check',
-		Default = true,
-	})
-	AutoDaveyAutoSwitch = AutoDavey:CreateToggle({
-		Name = 'AutoSwitch Pickaxe',
+	BreakAfterLaunch = AutoDavey:CreateToggle({
+		Name = 'Break After Launch',
 		Default = false,
-		Tooltip = 'switches to pickaxe when breaking thens switches back to cannon'
+		Tooltip = 'Attempts to break the cannon after launching.'
 	})
 end)
 
