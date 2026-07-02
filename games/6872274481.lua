@@ -3136,19 +3136,24 @@ run(function()
     local MinVelocity
     local GroundDistance
     local AnchorAttempts
-    local ClutchPriority
+    local BlockClutch
+    local TelepearlClutch
+    local DaoClutch
+    local JadeHammerClutch
+    local VoidAxeClutch
     local rayCheck = RaycastParams.new()
     rayCheck.RespectCanCollide = true
     rayCheck.FilterType = Enum.RaycastFilterType.Exclude
     local lastAnchor = 0
     local usedPearl = false
     local lastLegitUse = 0
+    local clutchBusyUntil = 0
+    local lastBlockPlace = 0
     local projectileRemote = {InvokeServer = function() end}
     task.spawn(function()
         projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
     end)
 
-    local clutchDefaults = {'Block', 'Telepearl', 'Dao', 'Jade Hammer', 'Void Axe'}
     local daoItems = {'wood_dao', 'stone_dao', 'iron_dao', 'diamond_dao', 'emerald_dao'}
 
     local function validCharacter()
@@ -3204,14 +3209,14 @@ run(function()
         local calc = prediction.SolveTrajectory(root.Position, meta.launchVelocity, meta.gravitationalAcceleration, spot, Vector3.zero, workspace.Gravity, 0, 0)
         if not calc then return end
 
-        usedPearl = true
         local oldTool = store.hand
         local hotbar = getHotbar(pearl.tool)
-        switchItem(pearl.tool)
+        switchItem(pearl.tool, 0.1)
         if hotbar then hotbarSwitch(hotbar) end
+        task.wait(0.03)
 
         local direction = CFrame.lookAt(root.Position, calc).LookVector * meta.launchVelocity
-        pcall(function()
+        local success = pcall(function()
             bedwars.ProjectileController:createLocalProjectile(meta, 'telepearl', 'telepearl', root.Position, nil, direction, {drawDurationSeconds = 1})
             projectileRemote:InvokeServer(pearl.tool, 'telepearl', 'telepearl', root.Position, root.Position, direction, httpService:GenerateGUID(true), {
                 drawDurationSeconds = 1,
@@ -3219,13 +3224,19 @@ run(function()
             }, workspace:GetServerTimeNow() - 0.045)
         end)
         restoreTool(oldTool)
-        return true
+        if success then
+            usedPearl = true
+            return true
+        end
     end
 
-    local function blockClutch(root, ground)
+    local function blockClutch(root)
+        if tick() - lastBlockPlace < 0.08 then return end
         local wool = getWool()
         if not wool then return end
-        local placePosition = bedwars.BlockController:getBlockPosition((ground and ground.Position or root.Position) - Vector3.new(0, 3, 0)) * 3
+
+        lastBlockPlace = tick()
+        local placePosition = bedwars.BlockController:getBlockPosition(root.Position - Vector3.new(0, 4, 0)) * 3
         return not getPlacedBlock(placePosition) and bedwars.placeBlock(placePosition, wool)
     end
 
@@ -3233,10 +3244,28 @@ run(function()
         if not item then return end
         local oldTool = store.hand
         local hotbar = getHotbar(item.tool)
-        switchItem(item.tool, 0.05)
+        switchItem(item.tool, 0.1)
         if hotbar then hotbarSwitch(hotbar) end
+        task.wait(0.05)
         callback(item, ability)
         restoreTool(oldTool)
+        return true
+    end
+
+    local function useToolAbility(ability, data)
+        local success, result = pcall(function()
+            return bedwars.AbilityController:useAbility(ability, newproxy(true), data)
+        end)
+        if success and result ~= false then return true end
+
+        success, result = pcall(function()
+            return bedwars.AbilityController:useAbility(ability, data)
+        end)
+        if success and result ~= false then return true end
+
+        pcall(function()
+            bedwars.Client:Get(remotes.UseAbility).instance:FireServer(ability, data)
+        end)
         return true
     end
 
@@ -3246,7 +3275,7 @@ run(function()
         local ability = item.itemType..'_jump'
         if bedwars.AbilityController:canUseAbility(ability) then
             return abilityClutch(item, ability, function(_, abilityId)
-                bedwars.AbilityController:useAbility(abilityId)
+                useToolAbility(abilityId, {direction = Vector3.yAxis, origin = root.Position})
                 root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, math.max(root.AssemblyLinearVelocity.Y, -3), root.AssemblyLinearVelocity.Z)
             end)
         end
@@ -3258,7 +3287,7 @@ run(function()
         local ability = item.itemType..'_jump'
         if bedwars.AbilityController:canUseAbility(ability) then
             return abilityClutch(item, ability, function(_, abilityId)
-                bedwars.AbilityController:useAbility(abilityId)
+                useToolAbility(abilityId, {direction = Vector3.yAxis, origin = root.Position})
                 root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, math.max(root.AssemblyLinearVelocity.Y, -3), root.AssemblyLinearVelocity.Z)
             end)
         end
@@ -3281,45 +3310,44 @@ run(function()
         end
     end
 
-    local clutchMethods = {
-        Telepearl = function(root, ground)
-            local pearl = getItem('telepearl')
-            local safeGround = ground and ground.Position or findNearbyGround(root)
-            return pearl and safeGround and firePearl(root, safeGround + Vector3.new(0, 3, 0), pearl)
-        end,
-        Block = function(root, ground)
-            return blockClutch(root, ground)
-        end,
-        ['Jade Hammer'] = jadeClutch,
-        Dao = daoClutch,
-        ['Void Axe'] = voidClutch
-    }
+    local function toolClutch(root)
+        if DaoClutch and DaoClutch.Enabled and daoClutch(root) then return true end
+        if JadeHammerClutch and JadeHammerClutch.Enabled and jadeClutch(root) then return true end
+        if VoidAxeClutch and VoidAxeClutch.Enabled and voidClutch(root) then return true end
+    end
 
-    local function getPriorityOrder()
-        local order = {}
-        local source = ClutchPriority and ClutchPriority.List or clutchDefaults
-        for _, name in source do
-            if clutchMethods[name] and not table.find(order, name) then
-                table.insert(order, name)
-            end
-        end
-        for _, name in clutchDefaults do
-            if not table.find(order, name) then
-                table.insert(order, name)
-            end
-        end
-        return order
+    local function telepearlClutch(root, ground, groundDistance)
+        if usedPearl or not TelepearlClutch or not TelepearlClutch.Enabled then return end
+        if ground and groundDistance > 24 then return end
+
+        local pearl = getItem('telepearl')
+        local safeGround = ground and ground.Position or findNearbyGround(root)
+        return pearl and safeGround and firePearl(root, safeGround + Vector3.new(0, 3, 0), pearl)
     end
 
     local function legitClutch(root, humanoid, ground)
-        if tick() - lastLegitUse < 0.12 then return end
+        local now = tick()
+        if now < clutchBusyUntil or now - lastLegitUse < 0.06 then return end
         if humanoid.FloorMaterial ~= Enum.Material.Air then return end
-        lastLegitUse = tick()
 
-        for _, name in getPriorityOrder() do
-            if ClutchPriority and table.find(ClutchPriority.ListEnabled, name) and clutchMethods[name](root, ground) then
+        local groundDistance = ground and (root.Position.Y - ground.Position.Y) or math.huge
+        lastLegitUse = now
+
+        if BlockClutch and BlockClutch.Enabled and (not ground or groundDistance <= 14) then
+            if blockClutch(root) then
+                clutchBusyUntil = tick() + 0.08
                 return true
             end
+        end
+
+        if TelepearlClutch and TelepearlClutch.Enabled and telepearlClutch(root, ground, groundDistance) then
+            clutchBusyUntil = tick() + 0.65
+            return true
+        end
+
+        if ground and groundDistance <= math.max(12, GroundDistance.Value * 0.5) and toolClutch(root) then
+            clutchBusyUntil = tick() + 0.65
+            return true
         end
     end
 
@@ -3335,12 +3363,15 @@ run(function()
         local legit = Mode and Mode.Value == 'Legit'
         local anchor = Mode and Mode.Value == 'Blatant'
         if AnchorAttempts and AnchorAttempts.Object then AnchorAttempts.Object.Visible = anchor end
-        if ClutchPriority and ClutchPriority.Object then ClutchPriority.Object.Visible = legit end
-        if ClutchPriority and ClutchPriority.Window then ClutchPriority.Window.Visible = legit and ClutchPriority.Window.Visible or false end
+        for _, option in {BlockClutch, TelepearlClutch, DaoClutch, JadeHammerClutch, VoidAxeClutch} do
+            if option and option.Object then
+                option.Object.Visible = legit
+            end
+        end
     end
 
     NoFall = vape.Categories.Blatant:CreateModule({
-        Name = 'NoFall',
+        Name = 'NoFallDamage',
         Function = function(callback)
             if callback then
                 repeat
@@ -3365,6 +3396,8 @@ run(function()
                 usedPearl = false
                 lastAnchor = 0
                 lastLegitUse = 0
+                clutchBusyUntil = 0
+                lastBlockPlace = 0
             end
         end,
         Tooltip = 'Prevents fall damage using legitimate clutch methods or blatant velocity cancellation.'
@@ -3379,7 +3412,7 @@ run(function()
                 NoFall:Toggle()
             end
         end,
-        Tooltip = 'Legit uses ordered clutch methods. Blatant cancels fall velocity repeatedly.'
+        Tooltip = 'Legit uses fixed clutch order: blocks, telepearls, then tools. Blatant cancels fall velocity repeatedly.'
     })
     MinVelocity = NoFall:CreateSlider({
         Name = 'Minimum Velocity',
@@ -3400,87 +3433,29 @@ run(function()
         Default = 5,
         Visible = false
     })
-    ClutchPriority = NoFall:CreateTextList({
-        Name = 'Clutch Priority',
-        Default = clutchDefaults,
-        Tooltip = 'Drag the pills up or down to reorder them. Enabled pills are tried from top to bottom.'
+    BlockClutch = NoFall:CreateToggle({
+        Name = 'Blocks',
+        Default = true,
+        Tooltip = 'Places blocks directly beneath you shortly before fall damage would apply.'
+    })
+    TelepearlClutch = NoFall:CreateToggle({
+        Name = 'Telepearl',
+        Default = true,
+        Tooltip = 'Throws a telepearl to nearby safe ground after block clutching is unavailable.'
+    })
+    DaoClutch = NoFall:CreateToggle({
+        Name = 'Dao',
+        Default = true
+    })
+    JadeHammerClutch = NoFall:CreateToggle({
+        Name = 'Jade Hammer',
+        Default = true
+    })
+    VoidAxeClutch = NoFall:CreateToggle({
+        Name = 'Void Axe',
+        Default = true
     })
 
-    local function stylePriorityPills()
-        if not ClutchPriority or not ClutchPriority.Window then return end
-        local add = ClutchPriority.Window:FindFirstChild('Add')
-        if add then add.Visible = false end
-        for _, object in ClutchPriority.Objects do
-            local close = object:FindFirstChild('Close')
-            if close then close.Visible = false end
-            object.Size = UDim2.fromOffset(200, 32)
-        end
-    end
-
-    local function refreshPriorityDrag()
-        if not ClutchPriority or not ClutchPriority.Objects then return end
-        stylePriorityPills()
-        for index, object in ClutchPriority.Objects do
-            if object:GetAttribute('NoFallDrag') then continue end
-            object:SetAttribute('NoFallDrag', true)
-            object.InputBegan:Connect(function(inputObj)
-                if inputObj.UserInputType ~= Enum.UserInputType.MouseButton1 and inputObj.UserInputType ~= Enum.UserInputType.Touch then return end
-                local startIndex = table.find(ClutchPriority.List, object.Name) or index
-                local targetIndex = startIndex
-                local ghost = object:Clone()
-                ghost.Name = object.Name..'Preview'
-                ghost.BackgroundTransparency = 0.45
-                ghost.ZIndex = object.ZIndex + 2
-                ghost.Parent = ClutchPriority.Window
-                local placeholder = object:Clone()
-                placeholder.Name = object.Name..'DropPreview'
-                placeholder.BackgroundTransparency = 0.65
-                placeholder.Active = false
-                placeholder.Parent = ClutchPriority.Window
-                local function updatePreview(position)
-                    ghost.Position = UDim2.fromOffset(10, math.clamp(position.Y - ClutchPriority.Window.AbsolutePosition.Y - 16, 47, 47 + (#ClutchPriority.List * 35)))
-                    for i, pill in ClutchPriority.Objects do
-                        if position.Y >= pill.AbsolutePosition.Y and position.Y <= pill.AbsolutePosition.Y + pill.AbsoluteSize.Y then
-                            targetIndex = i
-                            break
-                        end
-                    end
-                    placeholder.Position = UDim2.fromOffset(10, 47 + (targetIndex * 35))
-                end
-                updatePreview(inputObj.Position)
-                local moveConnection = inputService.InputChanged:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-                        updatePreview(input.Position)
-                    end
-                end)
-                local connection
-                connection = inputObj.Changed:Connect(function()
-                    if inputObj.UserInputState ~= Enum.UserInputState.End then return end
-                    if connection then connection:Disconnect() end
-                    if moveConnection then moveConnection:Disconnect() end
-                    if ghost then ghost:Destroy() end
-                    if placeholder then placeholder:Destroy() end
-
-                    if targetIndex ~= startIndex then
-                        local moved = table.remove(ClutchPriority.List, startIndex)
-                        if moved then
-                            table.insert(ClutchPriority.List, targetIndex, moved)
-                            ClutchPriority:ChangeValue()
-                            task.defer(refreshPriorityDrag)
-                        end
-                    end
-                end)
-            end)
-        end
-    end
-
-    local oldPriorityChange = ClutchPriority.ChangeValue
-    ClutchPriority.ChangeValue = function(self, ...)
-        oldPriorityChange(self, ...)
-        stylePriorityPills()
-        task.defer(refreshPriorityDrag)
-    end
-    task.defer(refreshPriorityDrag)
     setSettingsVisible()
 end)
 
@@ -9937,169 +9912,7 @@ run(function()
 end)
 
 run(function()
-	local AntiLasso
-	local Mode
-	local lastSafeCFrame
-	local lastSafeVelocity = Vector3.zero
-	local correctionUntil = 0
-	local pullSourcePosition
-	local lassoStartCFrame
-	local lassoStartTime = 0
-	local lastVelocity = Vector3.zero
-
-	local function isLassoObject(obj)
-		local name = obj.Name:lower()
-		if name:find('lasso') or name:find('lassy') or name:find('rope') then
-			return true
-		end
-		local parent = obj.Parent
-		while parent and parent ~= workspace do
-			local parentName = parent.Name:lower()
-			if parentName:find('lasso') or parentName:find('lassy') then
-				return true
-			end
-			parent = parent.Parent
-		end
-		return false
-	end
-
-	local function beginLassoCorrection(duration, sourcePosition)
-		local root = entitylib.isAlive and entitylib.character.RootPart
-		if not root then return end
-
-		if tick() > correctionUntil then
-			lassoStartCFrame = lastSafeCFrame or root.CFrame
-			lassoStartTime = tick()
-		end
-
-		correctionUntil = math.max(correctionUntil, tick() + duration)
-		pullSourcePosition = sourcePosition or pullSourcePosition
-	end
-
-	local function markLassoPull(obj)
-		if not entitylib.isAlive or not isLassoObject(obj) then return end
-		local character = entitylib.character.Character
-		if obj:IsA('Constraint') then
-			local attachment0 = obj.Attachment0
-			local attachment1 = obj.Attachment1
-			local localAttachment = attachment0 and attachment0:IsDescendantOf(character) and attachment0 or attachment1 and attachment1:IsDescendantOf(character) and attachment1
-			local remoteAttachment = localAttachment == attachment0 and attachment1 or attachment0
-			if localAttachment then
-				beginLassoCorrection(0.8, remoteAttachment and remoteAttachment.WorldPosition or nil)
-			end
-		elseif obj:IsA('BasePart') and obj:IsDescendantOf(character) then
-			beginLassoCorrection(0.45)
-		end
-	end
-
-	local function getPullDirection(root)
-		if pullSourcePosition then
-			local direction = (pullSourcePosition - root.Position) * Vector3.new(1, 0, 1)
-			if direction.Magnitude > 0.1 then
-				return direction.Unit
-			end
-		end
-		local safeDirection = lastSafeCFrame and (root.Position - lastSafeCFrame.Position) * Vector3.new(1, 0, 1) or Vector3.zero
-		return safeDirection.Magnitude > 0.1 and safeDirection.Unit or nil
-	end
-
-	local function counterPull(root, dt)
-		local horizontalVelocity = root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
-		local pullDirection = getPullDirection(root)
-		local moveDirection = entitylib.character.Humanoid.MoveDirection * Vector3.new(1, 0, 1)
-		local allowedVelocity = lastSafeVelocity * Vector3.new(1, 0, 1)
-		if moveDirection.Magnitude > 0.05 then
-			allowedVelocity = moveDirection.Unit * math.max(entitylib.character.Humanoid.WalkSpeed, allowedVelocity.Magnitude)
-		end
-
-		if pullDirection then
-			local pullSpeed = horizontalVelocity:Dot(pullDirection)
-			if pullSpeed > 0 then
-				horizontalVelocity -= pullDirection * pullSpeed
-			end
-		end
-
-		local velocityDelta = (horizontalVelocity - allowedVelocity)
-		if velocityDelta.Magnitude > 18 then
-			horizontalVelocity = allowedVelocity + velocityDelta.Unit * 18
-		end
-
-		root.AssemblyLinearVelocity = horizontalVelocity + Vector3.new(0, math.min(root.AssemblyLinearVelocity.Y, 0), 0)
-		if Mode.Value == 'Strong' and lassoStartCFrame then
-			local startPosition = lassoStartCFrame.Position
-			root.CFrame = CFrame.new(startPosition, startPosition + root.CFrame.LookVector)
-			root.AssemblyLinearVelocity = Vector3.new(0, math.min(root.AssemblyLinearVelocity.Y, 0), 0)
-			root.AssemblyAngularVelocity = Vector3.zero
-			root:ApplyImpulse((-root.AssemblyLinearVelocity * root.AssemblyMass))
-		elseif Mode.Value == 'Passive' and lassoStartCFrame and tick() - lassoStartTime > 0.15 then
-			local offset = (root.Position - lassoStartCFrame.Position) * Vector3.new(1, 0, 1)
-			if offset.Magnitude > 0.25 then
-				root.CFrame = root.CFrame:Lerp(lassoStartCFrame + Vector3.new(0, root.Position.Y - lassoStartCFrame.Position.Y, 0), math.clamp(dt * 12, 0, 0.75))
-			end
-		end
-	end
-
-	AntiLasso = vape.Categories.Utility:CreateModule({
-		Name = 'AntiLasso',
-		Function = function(callback)
-			if callback then
-				AntiLasso:Clean(workspace.DescendantAdded:Connect(function(obj)
-					task.defer(markLassoPull, obj)
-				end))
-				AntiLasso:Clean(runService.Heartbeat:Connect(function(dt)
-					if not entitylib.isAlive then return end
-					local root = entitylib.character.RootPart
-					local humanoid = entitylib.character.Humanoid
-					local horizontalVelocity = root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
-					local horizontalAcceleration = ((horizontalVelocity - lastVelocity) / math.max(dt, 0.016)).Magnitude
-					lastVelocity = horizontalVelocity
-
-					for _, obj in entitylib.character.Character:GetDescendants() do
-						markLassoPull(obj)
-					end
-
-					local movingByInput = humanoid.MoveDirection.Magnitude > 0.05
-					if humanoid.FloorMaterial ~= Enum.Material.Air and horizontalVelocity.Magnitude < 70 and (movingByInput or tick() > correctionUntil) then
-						lastSafeCFrame = root.CFrame
-						lastSafeVelocity = root.AssemblyLinearVelocity
-					end
-
-					if horizontalAcceleration > 180 and horizontalVelocity.Magnitude > math.max(humanoid.WalkSpeed + 16, 34) and not movingByInput then
-						beginLassoCorrection(0.45)
-					end
-
-					if tick() < correctionUntil then
-						counterPull(root, dt)
-					elseif lassoStartCFrame then
-						if Mode.Value == 'Passive' then
-							root.CFrame = lassoStartCFrame + Vector3.new(0, root.Position.Y - lassoStartCFrame.Position.Y, 0)
-						end
-						lassoStartCFrame = nil
-					elseif tick() - correctionUntil > 1 then
-						pullSourcePosition = nil
-					end
-				end))
-			else
-				lastSafeCFrame = nil
-				lassoStartCFrame = nil
-				pullSourcePosition = nil
-				correctionUntil = 0
-				lastVelocity = Vector3.zero
-			end
-		end,
-		Tooltip = 'Prevents getting pulled by lasso',
-	})
-	Mode = AntiLasso:CreateDropdown({
-		Name = 'Mode',
-		List = {'Strong', 'Passive'},
-		Tooltip = 'Controls how aggressively AntiLasso resists lasso displacement',
-	})
-end)
-
-
-
-run(function()
-    local CatVapeAntiLasso
+    local AntiLasso
     local Chance
     local Check
 
@@ -10118,7 +9931,7 @@ run(function()
 		return
 	end
 
-	CatVapeAntiLasso:Clean(character.ChildAdded:Connect(function(accessory)
+	AntiLasso:Clean(character.ChildAdded:Connect(function(accessory)
 		if accessory:IsA('Accessory') and accessory:FindFirstChild('Rope') and shouldAnchor() then
 			local root = character.PrimaryPart or character:FindFirstChild('HumanoidRootPart')
 			if root then
@@ -10133,11 +9946,11 @@ run(function()
 	end))
     end
 
-    CatVapeAntiLasso = vape.Categories.Utility:CreateModule({
-	Name = 'Anti Lasso',
+    AntiLasso = vape.Categories.Utility:CreateModule({
+	Name = 'AntiLasso',
 	Function = function(callback)
 		if callback then
-			CatVapeAntiLasso:Clean(entitylib.Events.LocalAdded:Connect(function(ent)
+			AntiLasso:Clean(entitylib.Events.LocalAdded:Connect(function(ent)
 				task.delay(1, function()
 					added(ent and ent.Character)
 				end)
@@ -10150,14 +9963,14 @@ run(function()
 	Tooltip = 'Prevents you from getting pulled by lasso projectiles.'
     })
 
-    Chance = CatVapeAntiLasso:CreateSlider({
+    Chance = AntiLasso:CreateSlider({
 	Name = 'Chance',
 	Min = 0,
 	Max = 100,
 	Default = 100,
 	Suffix = '%'
     })
-    Check = CatVapeAntiLasso:CreateToggle({Name = 'Only when targeting'})
+    Check = AntiLasso:CreateToggle({Name = 'Only when targeting'})
 end)
 
 run(function()
@@ -10804,160 +10617,6 @@ run(function()
 end)
 
 
-run(function()
-    local CatVapeTritonClutch
-    local Legit
-    local Back
-    local BackDelay
-    local Limit
-
-    local rayCheck = RaycastParams.new()
-    rayCheck.RespectCanCollide = true
-    rayCheck.FilterType = Enum.RaycastFilterType.Include
-    local projectileRemote = {InvokeServer = function() end}
-    task.spawn(function()
-	projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
-    end)
-
-    local function fireHarpoon(pos, spot, item)
-	local hotbar, old = getHotbar(item.tool), store.hand
-
-	switchItem(item.tool)
-	if Legit.Enabled and hotbar then
-		hotbarSwitch(hotbar)
-	end
-
-	local meta = bedwars.ProjectileMeta.harpoon_projectile
-	local landed = false
-	if meta then
-		local calc = prediction.SolveTrajectory(pos, meta.launchVelocity, meta.gravitationalAcceleration, spot, Vector3.zero, workspace.Gravity, 0, 0)
-		if calc then
-			local dir = CFrame.lookAt(pos, calc).LookVector * meta.launchVelocity
-			local projectile
-			pcall(function()
-				projectile = bedwars.ProjectileController:createLocalProjectile(meta, 'harpoon_projectile', 'harpoon_projectile', pos, nil, dir, {drawDurationSeconds = 1})
-			end)
-			local success, res = pcall(function()
-				return projectileRemote:InvokeServer(
-					item.tool,
-					'harpoon_projectile',
-					'harpoon_projectile',
-					pos,
-					pos,
-					dir,
-					httpService:GenerateGUID(true),
-					{
-						drawDurationSeconds = 1,
-						shotId = httpService:GenerateGUID(false)
-					},
-					workspace:GetServerTimeNow() - 0.045
-				)
-			end)
-			task.spawn(function()
-				repeat
-					task.wait()
-				until not projectile or not projectile.Parent
-				landed = true
-			end)
-			if success and res then
-				pcall(function()
-					res.Parent = replicatedStorage
-				end)
-			end
-		else
-			landed = true
-		end
-	else
-		landed = true
-	end
-
-	repeat
-		task.wait()
-	until landed or not CatVapeTritonClutch.Enabled
-	if Back.Enabled and old and old.tool then
-		task.wait(BackDelay:GetRandomValue())
-		switchItem(old.tool)
-		if Legit.Enabled and getHotbar(old.tool) then
-			hotbarSwitch(getHotbar(old.tool))
-		end
-	end
-    end
-
-    local function findNearGround(origin)
-	for _, direction in {Vector3.new(1, 0, 0), Vector3.new(0, 0, 1), Vector3.new(-1, 0, 0), Vector3.new(0, 0, -1)} do
-		for i = 1, 24 do
-			local ray = workspace:Raycast((origin.Position + (Vector3.yAxis * 3)) + (direction * i), Vector3.new(0, -60, 0), rayCheck)
-			if ray then
-				return ray.Position
-			end
-		end
-	end
-	return nil
-    end
-
-    CatVapeTritonClutch = vape.Categories.Kits:CreateModule({
-	Name = 'Auto Triton',
-	Function = function(callback)
-		if callback then
-			local check, lasty
-			repeat
-				if entitylib.isAlive and (not Limit.Enabled or store.hand and store.hand.tool and store.hand.tool.Name == 'harpoon') then
-					local root = entitylib.character.RootPart
-					local harpoon = getItem('harpoon')
-					rayCheck.FilterDescendantsInstances = {store.map}
-					rayCheck.CollisionGroup = root.CollisionGroup
-
-					if entitylib.character.Humanoid.FloorMaterial ~= Enum.Material.Air then
-						lasty = root.CFrame
-					end
-
-					if harpoon and root.Velocity.Y < -60 and not workspace:Raycast(root.Position, Vector3.new(0, -200, 0), rayCheck) then
-						if not check then
-							check = true
-							local ground = findNearGround(root.CFrame + Vector3.new(0, 40, 0)) or findNearGround(lasty and lasty + Vector3.new(0, 5, 0) or root.CFrame)
-							if ground then
-								fireHarpoon(root.Position, ground, harpoon)
-							end
-						end
-					else
-						check = false
-					end
-				end
-				task.wait(0.1)
-			until not CatVapeTritonClutch.Enabled
-		end
-	end,
-	Tooltip = 'Automatically throws Triton trident onto nearby ground after falling a certain distance.'
-    })
-
-    Legit = CatVapeTritonClutch:CreateToggle({
-	Name = 'Legit Switch',
-	Tooltip = 'Visualizes the switching clientside',
-	Default = true
-    })
-    Back = CatVapeTritonClutch:CreateToggle({
-	Name = 'Switch back',
-	Default = true,
-	Function = function(callback)
-		if BackDelay then
-			BackDelay.Object.Visible = callback
-		end
-	end,
-	Tooltip = 'Switches back to the previous slot after throwing the harpoon'
-    })
-    BackDelay = CatVapeTritonClutch:CreateTwoSlider({
-	Name = 'Switch Back Delay',
-	Min = 0,
-	Max = 2,
-	DefaultMin = 0.1,
-	DefaultMax = 0.2,
-	Darker = true
-    })
-    Limit = CatVapeTritonClutch:CreateToggle({
-	Name = 'Limit to item',
-	Tooltip = 'Only throws the harpoon when holding a harpoon'
-    })
-end)
 
 run(function()
     local AutoPlay
