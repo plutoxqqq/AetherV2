@@ -3134,13 +3134,17 @@ run(function()
     local NoFall
     local Mode
     local MinVelocity
-    local RayDistance
+    local GroundDistance
     local rayCheck = RaycastParams.new()
     rayCheck.RespectCanCollide = true
+    rayCheck.FilterType = Enum.RaycastFilterType.Exclude
     local disabledConnections = {}
     local patchedController = {}
-    local lastGroundSpoof = 0
-    local lastAnchorPulse = 0
+    local lastAction = {}
+    local projectileRemote = {InvokeServer = function() end}
+    task.spawn(function()
+        projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
+    end)
 
     local function validCharacter()
         if not entitylib.isAlive then return end
@@ -3152,14 +3156,36 @@ run(function()
         end
     end
 
-    local function getGround(root, character, distance)
-        rayCheck.FilterDescendantsInstances = {lplr.Character, gameCamera, AntiFallPart}
-        rayCheck.FilterType = Enum.RaycastFilterType.Exclude
-        rayCheck.CollisionGroup = root.CollisionGroup
+    local function actionReady(name, delay)
+        local now = tick()
+        if (lastAction[name] or 0) + delay > now then return false end
+        lastAction[name] = now
+        return true
+    end
 
+    local function updateRay(root)
+        rayCheck.FilterDescendantsInstances = {lplr.Character, gameCamera, AntiFallPart}
+        rayCheck.CollisionGroup = root.CollisionGroup
+    end
+
+    local function getGround(root, character, distance)
+        updateRay(root)
         local hipHeight = character.HipHeight or (character.Humanoid and character.Humanoid.HipHeight) or 2
         local castDistance = -(distance + hipHeight + (root.Size.Y * 0.5))
         return workspace:Blockcast(root.CFrame, Vector3.new(3, 3, 3), Vector3.new(0, castDistance, 0), rayCheck)
+    end
+
+    local function findNearbyGround(root)
+        updateRay(root)
+        local origin = root.Position + Vector3.new(0, 18, 0)
+        for _, direction in {Vector3.zero, Vector3.new(1, 0, 0), Vector3.new(-1, 0, 0), Vector3.new(0, 0, 1), Vector3.new(0, 0, -1), Vector3.new(1, 0, 1), Vector3.new(-1, 0, 1), Vector3.new(1, 0, -1), Vector3.new(-1, 0, -1)} do
+            for distance = 0, 30, 3 do
+                local ray = workspace:Raycast(origin + (direction * distance), Vector3.new(0, -90, 0), rayCheck)
+                if ray then
+                    return ray.Position
+                end
+            end
+        end
     end
 
     local function disconnectStateConnections(humanoid)
@@ -3186,7 +3212,7 @@ run(function()
         if not controller then return end
 
         if callback then
-            for _, key in {'KnitStart', 'onGroundHit', 'onImpact', 'takeFallDamage', 'calculateFallDamage'} do
+            for _, key in {'KnitStart', 'onGroundHit', 'onImpact', 'onCharacterAdded', 'takeFallDamage', 'calculateFallDamage'} do
                 local value = controller[key]
                 if type(value) == 'function' and not patchedController[key] then
                     patchedController[key] = value
@@ -3201,9 +3227,7 @@ run(function()
         end
     end
 
-    local function groundSpoof(root)
-        if tick() - lastGroundSpoof < 0.18 then return end
-        lastGroundSpoof = tick()
+    local function getGroundHitRemote()
         local remoteName = remotes and remotes.GroundHit
         local remote
         if bedwars and bedwars.Client and remoteName and remoteName ~= '' then
@@ -3211,60 +3235,124 @@ run(function()
                 remote = bedwars.Client:Get(remoteName)
             end)
         end
-        remote = remote and remote.instance
-        if remote and remote.FireServer then
+        return remote and remote.instance
+    end
+
+    local function fireGroundHit(root, amount)
+        local remote = getGroundHitRemote()
+        if not remote or not remote.FireServer then return end
+        for _ = 1, amount do
             pcall(function()
-                remote:FireServer(nil, Vector3.new(0, math.max(root.AssemblyLinearVelocity.Y, -70), 0), workspace:GetServerTimeNow())
+                remote:FireServer(nil, Vector3.new(0, math.clamp(root.AssemblyLinearVelocity.Y, -70, -8), 0), workspace:GetServerTimeNow())
             end)
         end
     end
 
-    local function cushionFall(root, ground)
-        if not ground then return end
-        local velocity = root.AssemblyLinearVelocity
-        if velocity.Y < -18 then
-            root.AssemblyLinearVelocity = Vector3.new(velocity.X, -18, velocity.Z)
+    local function firePearl(root, spot, pearl)
+        if not pearl or not projectileRemote or not projectileRemote.InvokeServer then return end
+        local meta = bedwars.ProjectileMeta.telepearl
+        local calc = prediction.SolveTrajectory(root.Position, meta.launchVelocity, meta.gravitationalAcceleration, spot, Vector3.zero, workspace.Gravity, 0, 0)
+        if not calc then return end
+
+        local oldTool = store.hand
+        local hotbar = getHotbar(pearl.tool)
+        switchItem(pearl.tool)
+        if hotbar then hotbarSwitch(hotbar) end
+
+        local direction = CFrame.lookAt(root.Position, calc).LookVector * meta.launchVelocity
+        pcall(function()
+            bedwars.ProjectileController:createLocalProjectile(meta, 'telepearl', 'telepearl', root.Position, nil, direction, {drawDurationSeconds = 1})
+            projectileRemote:InvokeServer(pearl.tool, 'telepearl', 'telepearl', root.Position, root.Position, direction, httpService:GenerateGUID(true), {
+                drawDurationSeconds = 1,
+                shotId = httpService:GenerateGUID(false)
+            }, workspace:GetServerTimeNow() - 0.045)
+        end)
+
+        if oldTool and oldTool.tool then
+            task.delay(0.18, function()
+                switchItem(oldTool.tool)
+                local oldHotbar = getHotbar(oldTool.tool)
+                if oldHotbar then hotbarSwitch(oldHotbar) end
+            end)
         end
     end
 
-    local function anchorPulse(root)
-        if tick() - lastAnchorPulse < 0.45 then return end
-        lastAnchorPulse = tick()
+    local function legitClutch(root, ground)
+        if not actionReady('legit', 0.35) then return end
+        local pearl = getItem('telepearl')
+        local safeGround = ground and ground.Position or findNearbyGround(root)
+        if pearl and safeGround then
+            firePearl(root, safeGround + Vector3.new(0, 3, 0), pearl)
+            return true
+        end
+
+        local wool = getWool()
+        if wool then
+            local placePosition = bedwars.BlockController:getBlockPosition(root.Position - Vector3.new(0, 4, 0)) * 3
+            if not getPlacedBlock(placePosition) and bedwars.placeBlock(placePosition, wool) then
+                return true
+            end
+        end
+    end
+
+    local function aggressiveController(humanoid)
+        patchFallController(true)
+        disconnectStateConnections(humanoid)
+    end
+
+    local function aggressiveRemote(root)
+        if actionReady('remote', 0.08) then
+            fireGroundHit(root, 6)
+        end
+    end
+
+    local function aggressiveSnap(root, character, ground)
+        if not ground or not actionReady('snap', 0.12) then return end
+        local hipHeight = character.HipHeight or (character.Humanoid and character.Humanoid.HipHeight) or 2
+        root.CFrame = CFrame.new(root.Position.X, ground.Position.Y + hipHeight + (root.Size.Y * 0.5) + 0.2, root.Position.Z) * (root.CFrame - root.CFrame.Position)
+        root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, -2, root.AssemblyLinearVelocity.Z)
+    end
+
+    local function aggressiveBrake(root)
+        local velocity = root.AssemblyLinearVelocity
+        root.AssemblyLinearVelocity = Vector3.new(velocity.X * 0.35, math.max(velocity.Y, -6), velocity.Z * 0.35)
+    end
+
+    local function aggressiveAnchor(root)
+        if not actionReady('anchor', 0.22) then return end
         local wasAnchored = root.Anchored
         root.Anchored = true
-        task.delay(0.075, function()
+        task.delay(0.11, function()
             if root and root.Parent then
                 root.Anchored = wasAnchored
+                root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, math.max(root.AssemblyLinearVelocity.Y, -4), root.AssemblyLinearVelocity.Z)
             end
         end)
     end
 
     local function applyNoFall(character, root, humanoid)
         local velocity = root.AssemblyLinearVelocity
-        local threshold = -(MinVelocity and MinVelocity.Value or 62)
+        local threshold = -(MinVelocity and MinVelocity.Value or 60)
         if velocity.Y > threshold or humanoid.FloorMaterial ~= Enum.Material.Air then return 0.05 end
 
-        local ground = getGround(root, character, RayDistance and RayDistance.Value or 28)
-        local mode = Mode and Mode.Value or 'Hybrid'
+        local ground = getGround(root, character, GroundDistance and GroundDistance.Value or 30)
+        local mode = Mode and Mode.Value or 'Legit Clutch'
 
-        if mode == 'Controller' or mode == 'Hybrid' then
-            patchFallController(true)
-            disconnectStateConnections(humanoid)
+        if mode == 'Legit Clutch' then
+            legitClutch(root, ground)
+        elseif mode == 'Controller Kill' then
+            aggressiveController(humanoid)
+        elseif mode == 'Remote Burst' then
+            aggressiveRemote(root)
+        elseif mode == 'Snap Ground' then
+            aggressiveSnap(root, character, ground)
+        elseif mode == 'Air Brake' then
+            aggressiveBrake(root)
+        elseif mode == 'Anchor Lock' then
+            aggressiveAnchor(root)
         end
 
-        if mode == 'Cushion' or mode == 'Hybrid' then
-            cushionFall(root, ground)
-        end
-
-        if (mode == 'Ground Spoof' or mode == 'Hybrid') and ground then
-            groundSpoof(root)
-        end
-
-        if mode == 'Anchor Pulse' or (mode == 'Hybrid' and not ground and velocity.Y < -90) then
-            anchorPulse(root)
-        end
-
-        return ground and 0.025 or 0.04
+        return ground and 0.025 or 0.035
     end
 
     NoFall = vape.Categories.Blatant:CreateModule({
@@ -3274,24 +3362,23 @@ run(function()
                 local currentHumanoid
                 NoFall:Clean(entitylib.Events.LocalAdded:Connect(function(ent)
                     currentHumanoid = ent.Humanoid
-                    if Mode.Value == 'Controller' or Mode.Value == 'Hybrid' then
+                    if Mode.Value == 'Controller Kill' then
                         task.delay(0.5, function()
                             if NoFall.Enabled and currentHumanoid then
-                                disconnectStateConnections(currentHumanoid)
+                                aggressiveController(currentHumanoid)
                             end
                         end)
                     end
                 end))
 
-                patchFallController(true)
                 repeat
                     local waitDelay = 0.05
                     local character, root, humanoid = validCharacter()
                     if character then
                         if humanoid ~= currentHumanoid then
                             currentHumanoid = humanoid
-                            if Mode.Value == 'Controller' or Mode.Value == 'Hybrid' then
-                                disconnectStateConnections(humanoid)
+                            if Mode.Value == 'Controller Kill' then
+                                aggressiveController(humanoid)
                             end
                         end
                         waitDelay = applyNoFall(character, root, humanoid)
@@ -3301,32 +3388,36 @@ run(function()
             else
                 patchFallController(false)
                 restoreStateConnections()
+                table.clear(lastAction)
             end
         end,
-        Tooltip = 'Prevents taking fall damage without requiring items, blocks, tools, or other modules.'
+        Tooltip = 'Prevents fall damage with one legitimate clutch mode and five aggressive cancellation modes.'
     })
     Mode = NoFall:CreateDropdown({
         Name = 'Mode',
-        List = {'Hybrid', 'Controller', 'Cushion', 'Anchor Pulse', 'Ground Spoof'},
+        List = {'Legit Clutch', 'Controller Kill', 'Remote Burst', 'Snap Ground', 'Air Brake', 'Anchor Lock'},
         Function = function()
             if NoFall.Enabled then
+                patchFallController(false)
+                restoreStateConnections()
+                table.clear(lastAction)
                 NoFall:Toggle()
                 NoFall:Toggle()
             end
         end,
-        Tooltip = 'Hybrid combines controller suppression, state connection suppression, fall cushioning, and emergency anchor pulsing.'
+        Tooltip = 'Legit Clutch uses telepearls or blocks. The other modes aggressively cancel fall damage without requiring equipment.'
     })
     MinVelocity = NoFall:CreateSlider({
         Name = 'Minimum Velocity',
         Min = 35,
-        Max = 100,
-        Default = 62
+        Max = 120,
+        Default = 60
     })
-    RayDistance = NoFall:CreateSlider({
+    GroundDistance = NoFall:CreateSlider({
         Name = 'Ground Check',
         Min = 8,
-        Max = 60,
-        Default = 28
+        Max = 80,
+        Default = 30
     })
 end)
 
