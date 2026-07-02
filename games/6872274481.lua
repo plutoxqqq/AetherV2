@@ -3132,35 +3132,297 @@ end)
 
 run(function()
     local NoFall
+    local Mode
+    local MinVelocity
+    local GroundDistance
+    local AnchorAttempts
+    local ClutchPriority
+    local ClutchToggles = {}
     local rayCheck = RaycastParams.new()
     rayCheck.RespectCanCollide = true
+    rayCheck.FilterType = Enum.RaycastFilterType.Exclude
+    local lastAnchor = 0
+    local usedPearl = false
+    local lastLegitUse = 0
+    local projectileRemote = {InvokeServer = function() end}
+    task.spawn(function()
+        projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
+    end)
+
+    local clutchDefaults = {'Telepearl', 'Block', 'Jade', 'Dao', 'Void Axe'}
+    local daoItems = {'wood_dao', 'stone_dao', 'iron_dao', 'diamond_dao', 'emerald_dao'}
+
+    local function validCharacter()
+        if not entitylib.isAlive then return end
+        local character = entitylib.character
+        local root = character.RootPart or character.HumanoidRootPart
+        local humanoid = character.Humanoid
+        if root and humanoid and humanoid.Health > 0 then
+            return character, root, humanoid
+        end
+    end
+
+    local function updateRay(root)
+        rayCheck.FilterDescendantsInstances = {lplr.Character, gameCamera, AntiFallPart}
+        rayCheck.CollisionGroup = root.CollisionGroup
+    end
+
+    local function getGround(root, character, distance)
+        updateRay(root)
+        local hipHeight = character.HipHeight or (character.Humanoid and character.Humanoid.HipHeight) or 2
+        local castDistance = -(distance + hipHeight + (root.Size.Y * 0.5))
+        return workspace:Blockcast(root.CFrame, Vector3.new(3, 3, 3), Vector3.new(0, castDistance, 0), rayCheck)
+    end
+
+    local function findNearbyGround(root)
+        updateRay(root)
+        local origin = root.Position + Vector3.new(0, 18, 0)
+        for _, direction in {Vector3.zero, Vector3.new(1, 0, 0), Vector3.new(-1, 0, 0), Vector3.new(0, 0, 1), Vector3.new(0, 0, -1), Vector3.new(1, 0, 1), Vector3.new(-1, 0, 1), Vector3.new(1, 0, -1), Vector3.new(-1, 0, -1)} do
+            for distance = 0, 30, 3 do
+                local ray = workspace:Raycast(origin + (direction * distance), Vector3.new(0, -90, 0), rayCheck)
+                if ray then
+                    return ray.Position
+                end
+            end
+        end
+    end
+
+    local function restoreTool(oldTool)
+        if oldTool and oldTool.tool then
+            task.delay(0.18, function()
+                switchItem(oldTool.tool)
+                local oldHotbar = getHotbar(oldTool.tool)
+                if oldHotbar then hotbarSwitch(oldHotbar) end
+            end)
+        end
+    end
+
+    local function firePearl(root, spot, pearl)
+        if usedPearl or not pearl or not projectileRemote or not projectileRemote.InvokeServer then return end
+        local meta = bedwars.ProjectileMeta.telepearl
+        if not meta then return end
+
+        local calc = prediction.SolveTrajectory(root.Position, meta.launchVelocity, meta.gravitationalAcceleration, spot, Vector3.zero, workspace.Gravity, 0, 0)
+        if not calc then return end
+
+        usedPearl = true
+        local oldTool = store.hand
+        local hotbar = getHotbar(pearl.tool)
+        switchItem(pearl.tool)
+        if hotbar then hotbarSwitch(hotbar) end
+
+        local direction = CFrame.lookAt(root.Position, calc).LookVector * meta.launchVelocity
+        pcall(function()
+            bedwars.ProjectileController:createLocalProjectile(meta, 'telepearl', 'telepearl', root.Position, nil, direction, {drawDurationSeconds = 1})
+            projectileRemote:InvokeServer(pearl.tool, 'telepearl', 'telepearl', root.Position, root.Position, direction, httpService:GenerateGUID(true), {
+                drawDurationSeconds = 1,
+                shotId = httpService:GenerateGUID(false)
+            }, workspace:GetServerTimeNow() - 0.045)
+        end)
+        restoreTool(oldTool)
+        return true
+    end
+
+    local function blockClutch(root)
+        local wool = getWool()
+        if not wool then return end
+        local placePosition = bedwars.BlockController:getBlockPosition(root.Position - Vector3.new(0, 4, 0)) * 3
+        return not getPlacedBlock(placePosition) and bedwars.placeBlock(placePosition, wool)
+    end
+
+    local function abilityClutch(item, ability, callback)
+        if not item then return end
+        local oldTool = store.hand
+        local hotbar = getHotbar(item.tool)
+        switchItem(item.tool, 0.05)
+        if hotbar then hotbarSwitch(hotbar) end
+        callback(item, ability)
+        restoreTool(oldTool)
+        return true
+    end
+
+    local function jadeClutch(root)
+        local item = getItem('jade_hammer')
+        if not item then return end
+        local ability = item.itemType..'_jump'
+        if bedwars.AbilityController:canUseAbility(ability) then
+            return abilityClutch(item, ability, function(_, abilityId)
+                bedwars.AbilityController:useAbility(abilityId)
+                root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, math.max(root.AssemblyLinearVelocity.Y, -3), root.AssemblyLinearVelocity.Z)
+            end)
+        end
+    end
+
+    local function voidClutch(root)
+        local item = getItem('void_axe')
+        if not item then return end
+        local ability = item.itemType..'_jump'
+        if bedwars.AbilityController:canUseAbility(ability) then
+            return abilityClutch(item, ability, function(_, abilityId)
+                bedwars.AbilityController:useAbility(abilityId)
+                root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, math.max(root.AssemblyLinearVelocity.Y, -3), root.AssemblyLinearVelocity.Z)
+            end)
+        end
+    end
+
+    local function daoClutch(root)
+        for _, itemName in daoItems do
+            local item = getItem(itemName)
+            if item and (lplr.Character:GetAttribute('CanDashNext') or 0) < workspace:GetServerTimeNow() and bedwars.AbilityController:canUseAbility('dash') then
+                return abilityClutch(item, 'dash', function(dao)
+                    bedwars.SwordController.lastAttack = workspace:GetServerTimeNow()
+                    replicatedStorage['events-@easy-games/game-core:shared/game-core-networking@getEvents.Events'].useAbility:FireServer('dash', {
+                        direction = Vector3.new(root.CFrame.LookVector.X, -0.05, root.CFrame.LookVector.Z).Unit,
+                        origin = root.Position,
+                        weapon = dao.itemType
+                    })
+                    root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, math.max(root.AssemblyLinearVelocity.Y, -3), root.AssemblyLinearVelocity.Z)
+                end)
+            end
+        end
+    end
+
+    local clutchMethods = {
+        Telepearl = function(root, ground)
+            local pearl = getItem('telepearl')
+            local safeGround = ground and ground.Position or findNearbyGround(root)
+            return pearl and safeGround and firePearl(root, safeGround + Vector3.new(0, 3, 0), pearl)
+        end,
+        Block = function(root)
+            return blockClutch(root)
+        end,
+        Jade = jadeClutch,
+        Dao = daoClutch,
+        ['Void Axe'] = voidClutch
+    }
+
+    local function getPriorityOrder()
+        local order = {}
+        local source = ClutchPriority and ClutchPriority.List or clutchDefaults
+        for _, name in source do
+            if clutchMethods[name] and not table.find(order, name) then
+                table.insert(order, name)
+            end
+        end
+        for _, name in clutchDefaults do
+            if not table.find(order, name) then
+                table.insert(order, name)
+            end
+        end
+        return order
+    end
+
+    local function legitClutch(root, humanoid, ground)
+        if tick() - lastLegitUse < 0.12 then return end
+        if humanoid.FloorMaterial ~= Enum.Material.Air then return end
+        lastLegitUse = tick()
+
+        for _, name in getPriorityOrder() do
+            local toggle = ClutchToggles[name]
+            if toggle and toggle.Enabled and clutchMethods[name](root, ground) then
+                return true
+            end
+        end
+    end
+
+    local function anchorClutch(root)
+        local attempts = AnchorAttempts and AnchorAttempts.Value or 5
+        if tick() - lastAnchor < (1 / math.max(attempts, 1)) then return end
+        lastAnchor = tick()
+        local wasAnchored = root.Anchored
+        root.Anchored = true
+        task.delay(0.08, function()
+            if root and root.Parent then
+                root.Anchored = wasAnchored
+                root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, math.max(root.AssemblyLinearVelocity.Y, -4), root.AssemblyLinearVelocity.Z)
+            end
+        end)
+    end
+
+    local function setSettingsVisible()
+        local legit = Mode and Mode.Value == 'Legit Clutch'
+        local anchor = Mode and Mode.Value == 'Anchor Lock'
+        if AnchorAttempts and AnchorAttempts.Object then AnchorAttempts.Object.Visible = anchor end
+        if ClutchPriority and ClutchPriority.Object then ClutchPriority.Object.Visible = legit end
+        for _, toggle in ClutchToggles do
+            if toggle.Object then toggle.Object.Visible = legit end
+        end
+    end
 
     NoFall = vape.Categories.Blatant:CreateModule({
         Name = 'NoFall',
         Function = function(callback)
             if callback then
                 repeat
-                    local waitDelay = 0.05
-                    if entitylib.isAlive then
-                        local root = entitylib.character.RootPart
-                        local humanoid = entitylib.character.Humanoid
-                        if root and humanoid and root.AssemblyLinearVelocity.Y < -65 then
-                            rayCheck.FilterDescendantsInstances = {lplr.Character, gameCamera, AntiFallPart}
-                            local ray = workspace:Raycast(root.Position, Vector3.new(0, -(entitylib.character.HipHeight + 18), 0), rayCheck)
-                            if not ray then
-                                humanoid:ChangeState(Enum.HumanoidStateType.Ragdoll)
-                                task.wait(0.08)
-                                humanoid:ChangeState(Enum.HumanoidStateType.Running)
-                                waitDelay = 0.12
+                    local waitDelay = 0.04
+                    local character, root, humanoid = validCharacter()
+                    if character then
+                        if humanoid.FloorMaterial ~= Enum.Material.Air then
+                            usedPearl = false
+                        elseif root.AssemblyLinearVelocity.Y <= -(MinVelocity and MinVelocity.Value or 60) then
+                            local ground = getGround(root, character, GroundDistance and GroundDistance.Value or 30)
+                            if Mode.Value == 'Legit Clutch' then
+                                legitClutch(root, humanoid, ground)
+                            else
+                                anchorClutch(root)
+                                waitDelay = 0.02
                             end
                         end
                     end
                     task.wait(waitDelay)
                 until not NoFall.Enabled
+            else
+                usedPearl = false
+                lastAnchor = 0
+                lastLegitUse = 0
             end
         end,
-        Tooltip = 'Prevents taking fall damage.'
+        Tooltip = 'Prevents fall damage using legitimate clutch items or an aggressive anchor clutch.'
     })
+    Mode = NoFall:CreateDropdown({
+        Name = 'Mode',
+        List = {'Legit Clutch', 'Anchor Lock'},
+        Function = function()
+            setSettingsVisible()
+            if NoFall.Enabled then
+                NoFall:Toggle()
+                NoFall:Toggle()
+            end
+        end,
+        Tooltip = 'Legit Clutch uses ordered items. Anchor Lock repeatedly cancels dangerous falls.'
+    })
+    MinVelocity = NoFall:CreateSlider({
+        Name = 'Minimum Velocity',
+        Min = 35,
+        Max = 120,
+        Default = 60
+    })
+    GroundDistance = NoFall:CreateSlider({
+        Name = 'Ground Check',
+        Min = 8,
+        Max = 80,
+        Default = 30
+    })
+    AnchorAttempts = NoFall:CreateSlider({
+        Name = 'Attempts per second',
+        Min = 1,
+        Max = 12,
+        Default = 5,
+        Visible = false
+    })
+    for _, name in clutchDefaults do
+        ClutchToggles[name] = NoFall:CreateToggle({
+            Name = name..' Clutch',
+            Default = true,
+            Tooltip = 'Allows Legit Clutch to use '..name..' when it appears in the priority order.'
+        })
+    end
+    ClutchPriority = NoFall:CreateTextList({
+        Name = 'Priority Order',
+        Default = clutchDefaults,
+        Tooltip = 'Reorder this list to change Legit Clutch priority. The top method is attempted first.'
+    })
+    setSettingsVisible()
 end)
 
 run(function()
