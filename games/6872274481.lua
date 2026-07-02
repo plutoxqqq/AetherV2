@@ -3141,6 +3141,7 @@ run(function()
     local DaoClutch
     local JadeHammerClutch
     local VoidAxeClutch
+    local HealthCheck
     local rayCheck = RaycastParams.new()
     rayCheck.RespectCanCollide = true
     rayCheck.FilterType = Enum.RaycastFilterType.Exclude
@@ -3149,6 +3150,7 @@ run(function()
     local lastLegitUse = 0
     local clutchBusyUntil = 0
     local lastBlockPlace = 0
+    local fallAnchorY
     local projectileRemote = {InvokeServer = function() end}
     task.spawn(function()
         projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
@@ -3176,19 +3178,6 @@ run(function()
         local hipHeight = character.HipHeight or (character.Humanoid and character.Humanoid.HipHeight) or 2
         local castDistance = -(distance + hipHeight + (root.Size.Y * 0.5))
         return workspace:Blockcast(root.CFrame, Vector3.new(3, 3, 3), Vector3.new(0, castDistance, 0), rayCheck)
-    end
-
-    local function findNearbyGround(root)
-        updateRay(root)
-        local origin = root.Position + Vector3.new(0, 18, 0)
-        for _, direction in {Vector3.zero, Vector3.new(1, 0, 0), Vector3.new(-1, 0, 0), Vector3.new(0, 0, 1), Vector3.new(0, 0, -1), Vector3.new(1, 0, 1), Vector3.new(-1, 0, 1), Vector3.new(1, 0, -1), Vector3.new(-1, 0, -1)} do
-            for distance = 0, 30, 3 do
-                local ray = workspace:Raycast(origin + (direction * distance), Vector3.new(0, -90, 0), rayCheck)
-                if ray then
-                    return ray.Position
-                end
-            end
-        end
     end
 
     local function restoreTool(oldTool)
@@ -3232,12 +3221,25 @@ run(function()
 
     local function blockClutch(root)
         if tick() - lastBlockPlace < 0.08 then return end
-        local wool = getWool()
-        if not wool then return end
+        local wool, amount = getWool()
+        if not wool or (amount or 0) < 1 then return end
 
         lastBlockPlace = tick()
         local placePosition = bedwars.BlockController:getBlockPosition(root.Position - Vector3.new(0, 4, 0)) * 3
-        return not getPlacedBlock(placePosition) and bedwars.placeBlock(placePosition, wool)
+        fallAnchorY = root.Position.Y
+        if not getPlacedBlock(placePosition) and bedwars.placeBlock(placePosition, wool) then
+            return true
+        end
+    end
+
+    local function isFallFatal(root, humanoid, ground)
+        if not HealthCheck or not HealthCheck.Enabled then return true end
+        if not ground then return true end
+
+        local health = (lplr.Character and lplr.Character:GetAttribute('Health')) or humanoid.Health
+        local fallBlocks = math.max(0, ((fallAnchorY or root.Position.Y) - ground.Position.Y) / 3)
+        local estimatedDamage = math.max(0, fallBlocks - 6) * 5
+        return estimatedDamage >= health
     end
 
     local function abilityClutch(item, ability, callback)
@@ -3316,36 +3318,51 @@ run(function()
         if VoidAxeClutch and VoidAxeClutch.Enabled and voidClutch(root) then return true end
     end
 
+    local function shouldToolClutch(root, humanoid, groundDistance)
+        if not groundDistance or groundDistance == math.huge then return false end
+        local verticalSpeed = math.abs(root.AssemblyLinearVelocity.Y)
+        if verticalSpeed <= 0 then return false end
+
+        local bodyClearance = (humanoid.HipHeight or 2) + (root.Size.Y * 0.5)
+        local remainingDistance = math.max(0, groundDistance - bodyClearance)
+        return remainingDistance <= 4.5 or (remainingDistance / verticalSpeed) <= 0.16
+    end
+
     local function telepearlClutch(root, ground, groundDistance)
         if usedPearl or not TelepearlClutch or not TelepearlClutch.Enabled then return end
-        if ground and groundDistance > 24 then return end
-
         local pearl = getItem('telepearl')
-        local safeGround = ground and ground.Position or findNearbyGround(root)
-        return pearl and safeGround and firePearl(root, safeGround + Vector3.new(0, 3, 0), pearl)
+        return pearl and ground and firePearl(root, ground.Position + Vector3.new(0, 3, 0), pearl)
     end
 
     local function legitClutch(root, humanoid, ground)
         local now = tick()
         if now < clutchBusyUntil or now - lastLegitUse < 0.06 then return end
-        if humanoid.FloorMaterial ~= Enum.Material.Air then return end
+        if humanoid.FloorMaterial ~= Enum.Material.Air or root.AssemblyLinearVelocity.Y >= 0 then
+            fallAnchorY = root.Position.Y
+            return
+        end
 
         local groundDistance = ground and (root.Position.Y - ground.Position.Y) or math.huge
+        fallAnchorY = fallAnchorY or root.Position.Y
         lastLegitUse = now
 
-        if BlockClutch and BlockClutch.Enabled and (not ground or groundDistance <= 14) then
+        if not isFallFatal(root, humanoid, ground) then return end
+
+        if BlockClutch and BlockClutch.Enabled and groundDistance > 21 and (fallAnchorY - root.Position.Y) >= 15 then
             if blockClutch(root) then
                 clutchBusyUntil = tick() + 0.08
                 return true
             end
         end
 
+        if root.AssemblyLinearVelocity.Y > -(MinVelocity and MinVelocity.Value or 60) then return end
+
         if TelepearlClutch and TelepearlClutch.Enabled and telepearlClutch(root, ground, groundDistance) then
             clutchBusyUntil = tick() + 0.65
             return true
         end
 
-        if ground and groundDistance <= math.max(12, GroundDistance.Value * 0.5) and toolClutch(root) then
+        if ground and shouldToolClutch(root, humanoid, groundDistance) and toolClutch(root) then
             clutchBusyUntil = tick() + 0.65
             return true
         end
@@ -3380,11 +3397,12 @@ run(function()
                     if character then
                         if humanoid.FloorMaterial ~= Enum.Material.Air then
                             usedPearl = false
+                        elseif Mode.Value == 'Legit' then
+                            local ground = getGround(root, character, HealthCheck and HealthCheck.Enabled and 300 or (GroundDistance and GroundDistance.Value or 30))
+                            legitClutch(root, humanoid, ground)
                         elseif root.AssemblyLinearVelocity.Y <= -(MinVelocity and MinVelocity.Value or 60) then
-                            local ground = getGround(root, character, GroundDistance and GroundDistance.Value or 30)
-                            if Mode.Value == 'Legit' then
-                                legitClutch(root, humanoid, ground)
-                            else
+                            local ground = getGround(root, character, HealthCheck and HealthCheck.Enabled and 300 or (GroundDistance and GroundDistance.Value or 30))
+                            if isFallFatal(root, humanoid, ground) then
                                 anchorClutch(root)
                                 waitDelay = 0.02
                             end
@@ -3398,6 +3416,7 @@ run(function()
                 lastLegitUse = 0
                 clutchBusyUntil = 0
                 lastBlockPlace = 0
+                fallAnchorY = nil
             end
         end,
         Tooltip = 'Prevents fall damage using legitimate clutch methods or blatant velocity cancellation.'
@@ -3437,6 +3456,10 @@ run(function()
         Name = 'Blocks',
         Default = true,
         Tooltip = 'Places blocks directly beneath you shortly before fall damage would apply.'
+    })
+    HealthCheck = NoFall:CreateToggle({
+        Name = 'Health check',
+        Tooltip = 'Only clutches when the estimated fall damage would be lethal.'
     })
     TelepearlClutch = NoFall:CreateToggle({
         Name = 'Telepearl',
