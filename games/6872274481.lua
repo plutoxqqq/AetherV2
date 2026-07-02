@@ -3353,6 +3353,18 @@ run(function()
         Name = 'NoFall',
         Function = function(callback)
             if callback then
+                local currentHumanoid
+                NoFall:Clean(entitylib.Events.LocalAdded:Connect(function(ent)
+                    currentHumanoid = ent.Humanoid
+                    if Mode.Value == 'Controller Kill' then
+                        task.delay(0.5, function()
+                            if NoFall.Enabled and currentHumanoid then
+                                aggressiveController(currentHumanoid)
+                            end
+                        end)
+                    end
+                end))
+
                 repeat
                     local waitDelay = 0.04
                     local character, root, humanoid = validCharacter()
@@ -3368,6 +3380,7 @@ run(function()
                                 waitDelay = 0.02
                             end
                         end
+                        waitDelay = applyNoFall(character, root, humanoid)
                     end
                     task.wait(waitDelay)
                 until not NoFall.Enabled
