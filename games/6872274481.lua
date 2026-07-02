@@ -11692,13 +11692,25 @@ end)
 
 run(function()
     local Scaffold
+    local Clutch
     local Expand
     local Tower
     local Downwards
     local Diagonal
     local LimitItem
     local Mouse
+    local ClutchMode
+    local clutchRay = RaycastParams.new()
     local adjacent, lastpos, label = {}, Vector3.zero
+    local faceAdjacent = {
+        Vector3.new(3, 0, 0),
+        Vector3.new(-3, 0, 0),
+        Vector3.new(0, 3, 0),
+        Vector3.new(0, -3, 0),
+        Vector3.new(0, 0, 3),
+        Vector3.new(0, 0, -3)
+    }
+    clutchRay.FilterType = Enum.RaycastFilterType.Exclude
 
     for x = -3, 3, 3 do
         for y = -3, 3, 3 do
@@ -11739,6 +11751,62 @@ run(function()
             end
         end
         return false
+    end
+
+    local function checkFaceAdjacent(pos)
+        for _, v in faceAdjacent do
+            if getPlacedBlock(pos + v) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function getNearestPlacedAnchor(pos)
+        local closest, closestmag
+        for x = -3, 3, 3 do
+            for y = -3, 3, 3 do
+                for z = -3, 3, 3 do
+                    local checkpos = roundPos(pos + Vector3.new(x, y, z))
+                    local block, blockpos = getPlacedBlock(checkpos)
+                    if block then
+                        blockpos *= 3
+                        local mag = (pos - blockpos).Magnitude
+                        if not closestmag or mag < closestmag then
+                            closest, closestmag = blockpos, mag
+                        end
+                    end
+                end
+            end
+        end
+        return closest
+    end
+
+    local function getClutchPath(startpos, endpos, limit)
+        local path, currentpos = {}, startpos
+
+        for _ = 1, limit do
+            if currentpos == endpos then break end
+
+            local diff = endpos - currentpos
+            local step
+            if math.abs(diff.X) >= math.abs(diff.Z) and diff.X ~= 0 then
+                step = Vector3.new(math.sign(diff.X) * 3, 0, 0)
+            elseif diff.Z ~= 0 then
+                step = Vector3.new(0, 0, math.sign(diff.Z) * 3)
+            elseif diff.Y ~= 0 then
+                step = Vector3.new(0, math.sign(diff.Y) * 3, 0)
+            else
+                break
+            end
+
+            currentpos += step
+            if not getPlacedBlock(currentpos) then
+                table.insert(path, currentpos)
+            end
+        end
+
+        return path
     end
 
     local function getScaffoldBlock()
