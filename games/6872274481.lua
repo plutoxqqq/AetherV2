@@ -3148,7 +3148,7 @@ run(function()
         projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
     end)
 
-    local clutchDefaults = {'Telepearl', 'Block', 'Jade', 'Dao', 'Void Axe'}
+    local clutchDefaults = {'Block', 'Telepearl', 'Dao', 'Jade Hammer', 'Void Axe'}
     local daoItems = {'wood_dao', 'stone_dao', 'iron_dao', 'diamond_dao', 'emerald_dao'}
 
     local function validCharacter()
@@ -3222,10 +3222,10 @@ run(function()
         return true
     end
 
-    local function blockClutch(root)
+    local function blockClutch(root, ground)
         local wool = getWool()
         if not wool then return end
-        local placePosition = bedwars.BlockController:getBlockPosition(root.Position - Vector3.new(0, 4, 0)) * 3
+        local placePosition = bedwars.BlockController:getBlockPosition((ground and ground.Position or root.Position) - Vector3.new(0, 3, 0)) * 3
         return not getPlacedBlock(placePosition) and bedwars.placeBlock(placePosition, wool)
     end
 
@@ -3287,10 +3287,10 @@ run(function()
             local safeGround = ground and ground.Position or findNearbyGround(root)
             return pearl and safeGround and firePearl(root, safeGround + Vector3.new(0, 3, 0), pearl)
         end,
-        Block = function(root)
-            return blockClutch(root)
+        Block = function(root, ground)
+            return blockClutch(root, ground)
         end,
-        Jade = jadeClutch,
+        ['Jade Hammer'] = jadeClutch,
         Dao = daoClutch,
         ['Void Axe'] = voidClutch
     }
@@ -3327,19 +3327,13 @@ run(function()
         local attempts = AnchorAttempts and AnchorAttempts.Value or 5
         if tick() - lastAnchor < (1 / math.max(attempts, 1)) then return end
         lastAnchor = tick()
-        local wasAnchored = root.Anchored
-        root.Anchored = true
-        task.delay(0.08, function()
-            if root and root.Parent then
-                root.Anchored = wasAnchored
-                root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, math.max(root.AssemblyLinearVelocity.Y, -4), root.AssemblyLinearVelocity.Z)
-            end
-        end)
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.Velocity = Vector3.zero
     end
 
     local function setSettingsVisible()
-        local legit = Mode and Mode.Value == 'Legit Clutch'
-        local anchor = Mode and Mode.Value == 'Anchor Lock'
+        local legit = Mode and Mode.Value == 'Legit'
+        local anchor = Mode and Mode.Value == 'Blatant'
         if AnchorAttempts and AnchorAttempts.Object then AnchorAttempts.Object.Visible = anchor end
         if ClutchPriority and ClutchPriority.Object then ClutchPriority.Object.Visible = legit end
         if ClutchPriority and ClutchPriority.Window then ClutchPriority.Window.Visible = legit and ClutchPriority.Window.Visible or false end
@@ -3349,18 +3343,6 @@ run(function()
         Name = 'NoFall',
         Function = function(callback)
             if callback then
-                local currentHumanoid
-                NoFall:Clean(entitylib.Events.LocalAdded:Connect(function(ent)
-                    currentHumanoid = ent.Humanoid
-                    if Mode.Value == 'Controller Kill' then
-                        task.delay(0.5, function()
-                            if NoFall.Enabled and currentHumanoid then
-                                aggressiveController(currentHumanoid)
-                            end
-                        end)
-                    end
-                end))
-
                 repeat
                     local waitDelay = 0.04
                     local character, root, humanoid = validCharacter()
@@ -3369,14 +3351,13 @@ run(function()
                             usedPearl = false
                         elseif root.AssemblyLinearVelocity.Y <= -(MinVelocity and MinVelocity.Value or 60) then
                             local ground = getGround(root, character, GroundDistance and GroundDistance.Value or 30)
-                            if Mode.Value == 'Legit Clutch' then
+                            if Mode.Value == 'Legit' then
                                 legitClutch(root, humanoid, ground)
                             else
                                 anchorClutch(root)
                                 waitDelay = 0.02
                             end
                         end
-                        waitDelay = applyNoFall(character, root, humanoid)
                     end
                     task.wait(waitDelay)
                 until not NoFall.Enabled
@@ -3386,11 +3367,11 @@ run(function()
                 lastLegitUse = 0
             end
         end,
-        Tooltip = 'Prevents fall damage using legitimate clutch items or an aggressive anchor clutch.'
+        Tooltip = 'Prevents fall damage using legitimate clutch methods or blatant velocity cancellation.'
     })
     Mode = NoFall:CreateDropdown({
         Name = 'Mode',
-        List = {'Legit Clutch', 'Anchor Lock'},
+        List = {'Legit', 'Blatant'},
         Function = function()
             setSettingsVisible()
             if NoFall.Enabled then
@@ -3398,7 +3379,7 @@ run(function()
                 NoFall:Toggle()
             end
         end,
-        Tooltip = 'Legit Clutch uses ordered items. Anchor Lock repeatedly cancels dangerous falls.'
+        Tooltip = 'Legit uses ordered clutch methods. Blatant cancels fall velocity repeatedly.'
     })
     MinVelocity = NoFall:CreateSlider({
         Name = 'Minimum Velocity',
@@ -3425,26 +3406,60 @@ run(function()
         Tooltip = 'Drag the pills up or down to reorder them. Enabled pills are tried from top to bottom.'
     })
 
+    local function stylePriorityPills()
+        if not ClutchPriority or not ClutchPriority.Window then return end
+        local add = ClutchPriority.Window:FindFirstChild('Add')
+        if add then add.Visible = false end
+        for _, object in ClutchPriority.Objects do
+            local close = object:FindFirstChild('Close')
+            if close then close.Visible = false end
+            object.Size = UDim2.fromOffset(200, 32)
+        end
+    end
+
     local function refreshPriorityDrag()
         if not ClutchPriority or not ClutchPriority.Objects then return end
+        stylePriorityPills()
         for index, object in ClutchPriority.Objects do
             if object:GetAttribute('NoFallDrag') then continue end
             object:SetAttribute('NoFallDrag', true)
             object.InputBegan:Connect(function(inputObj)
                 if inputObj.UserInputType ~= Enum.UserInputType.MouseButton1 and inputObj.UserInputType ~= Enum.UserInputType.Touch then return end
                 local startIndex = table.find(ClutchPriority.List, object.Name) or index
-                local connection
-                connection = inputObj.Changed:Connect(function()
-                    if inputObj.UserInputState ~= Enum.UserInputState.End then return end
-                    if connection then connection:Disconnect() end
-
-                    local targetIndex = startIndex
+                local targetIndex = startIndex
+                local ghost = object:Clone()
+                ghost.Name = object.Name..'Preview'
+                ghost.BackgroundTransparency = 0.45
+                ghost.ZIndex = object.ZIndex + 2
+                ghost.Parent = ClutchPriority.Window
+                local placeholder = object:Clone()
+                placeholder.Name = object.Name..'DropPreview'
+                placeholder.BackgroundTransparency = 0.65
+                placeholder.Active = false
+                placeholder.Parent = ClutchPriority.Window
+                local function updatePreview(position)
+                    ghost.Position = UDim2.fromOffset(10, math.clamp(position.Y - ClutchPriority.Window.AbsolutePosition.Y - 16, 47, 47 + (#ClutchPriority.List * 35)))
                     for i, pill in ClutchPriority.Objects do
-                        if inputObj.Position.Y >= pill.AbsolutePosition.Y and inputObj.Position.Y <= pill.AbsolutePosition.Y + pill.AbsoluteSize.Y then
+                        if position.Y >= pill.AbsolutePosition.Y and position.Y <= pill.AbsolutePosition.Y + pill.AbsoluteSize.Y then
                             targetIndex = i
                             break
                         end
                     end
+                    placeholder.Position = UDim2.fromOffset(10, 47 + (targetIndex * 35))
+                end
+                updatePreview(inputObj.Position)
+                local moveConnection = inputService.InputChanged:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                        updatePreview(input.Position)
+                    end
+                end)
+                local connection
+                connection = inputObj.Changed:Connect(function()
+                    if inputObj.UserInputState ~= Enum.UserInputState.End then return end
+                    if connection then connection:Disconnect() end
+                    if moveConnection then moveConnection:Disconnect() end
+                    if ghost then ghost:Destroy() end
+                    if placeholder then placeholder:Destroy() end
 
                     if targetIndex ~= startIndex then
                         local moved = table.remove(ClutchPriority.List, startIndex)
@@ -3462,6 +3477,7 @@ run(function()
     local oldPriorityChange = ClutchPriority.ChangeValue
     ClutchPriority.ChangeValue = function(self, ...)
         oldPriorityChange(self, ...)
+        stylePriorityPills()
         task.defer(refreshPriorityDrag)
     end
     task.defer(refreshPriorityDrag)
