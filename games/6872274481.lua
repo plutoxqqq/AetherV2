@@ -16749,6 +16749,14 @@ run(function()
 				nearest, nearestDistance = cannon, distance
 			end
 		end
+		for _, cannon in collectionService:GetTagged('block') do
+			if cannon.Name == 'cannon' then
+				local distance = (entitylib.character.RootPart.Position - cannon.Position).Magnitude
+				if distance <= Range.Value and (not nearestDistance or distance < nearestDistance) then
+					nearest, nearestDistance = cannon, distance
+				end
+			end
+		end
 		return nearest
 	end
 
@@ -16770,7 +16778,7 @@ run(function()
 		end
 
 		if bedwars.placeBlock(placePosition, item.itemType, false) then
-			local timeout = tick() + 1
+			local timeout = tick() + 2
 			repeat
 				local cannon = getNearestCannon()
 				if cannon then return cannon end
@@ -16782,17 +16790,40 @@ run(function()
 	local function launchCannon(cannon, targetPosition)
 		local block, blockpos = getPlacedBlock(cannon.Position)
 		if not blockpos then return false end
+		local lookVector = getCannonAim(cannon, targetPosition)
 
-		bedwars.Client:Get(remotes.CannonAim):SendToServer({
-			cannonBlockPos = blockpos,
-			lookVector = getCannonAim(cannon, targetPosition)
-		})
+		if cannon:FindFirstChild('AimPrompt') then
+			cannon.AimPrompt:InputHoldBegin()
+			task.wait((cannon.AimPrompt.HoldDuration or 0) + runService.PostSimulation:Wait())
+		end
+
+		for _ = 1, 6 do
+			bedwars.Client:Get(remotes.CannonAim):SendToServer({
+				cannonBlockPos = blockpos,
+				lookVector = lookVector
+			})
+			runService.PostSimulation:Wait()
+		end
+	end
+
+		if cannon:FindFirstChild('StopAimingPrompt') then
+			cannon.StopAimingPrompt:InputHoldBegin()
+			task.wait((cannon.StopAimingPrompt.HoldDuration or 0) + runService.PostSimulation:Wait())
+		end
 
 		if LaunchDelay.Value > 0 then
 			task.wait(LaunchDelay.Value)
 		end
 
-		local launched = bedwars.Client:Get(remotes.CannonLaunch):CallServer({cannonBlockPos = blockpos})
+		local launched = false
+		if cannon:FindFirstChild('LaunchSelfPrompt') then
+			cannon.LaunchSelfPrompt:InputHoldBegin()
+			task.wait((cannon.LaunchSelfPrompt.HoldDuration or 0) + runService.PostSimulation:Wait())
+			launched = true
+		end
+		launched = pcall(function()
+			bedwars.CannonHandController:launchSelf(cannon)
+		end) or launched
 		if launched and BreakAfterLaunch.Enabled and block then
 			task.delay(0.15, function()
 				pcall(bedwars.breakBlock, block, true, true)
