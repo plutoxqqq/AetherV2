@@ -3230,14 +3230,41 @@ run(function()
         end
     end
 
-    local function blockClutch(root)
-        if tick() - lastBlockPlace < 0.08 then return end
-        local wool = getWool()
-        if not wool then return end
+    local function getBlockClutchPositions(root, humanoid, groundDistance)
+        local velocity = root.AssemblyLinearVelocity
+        local horizontalVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+        local leadTime = math.clamp((groundDistance or 10) / math.max(math.abs(velocity.Y), 1), 0.04, 0.18)
+        local predicted = root.Position + (horizontalVelocity * leadTime)
+        local hipHeight = (humanoid and humanoid.HipHeight or 2) + (root.Size.Y * 0.5)
+        local baseHeight = math.clamp((groundDistance or 8) - hipHeight - 0.4, 3.4, 5.8)
+        local positions = {}
+
+        for _, offset in {
+            Vector3.zero,
+            horizontalVelocity.Magnitude > 1 and horizontalVelocity.Unit * 1.8 or Vector3.zero,
+            root.CFrame.LookVector * 1.8,
+            -root.CFrame.LookVector * 1.8,
+            root.CFrame.RightVector * 1.8,
+            -root.CFrame.RightVector * 1.8
+        } do
+            table.insert(positions, bedwars.BlockController:getBlockPosition(predicted + offset - Vector3.new(0, baseHeight, 0)) * 3)
+        end
+
+        return positions
+    end
+
+    local function blockClutch(root, humanoid, groundDistance)
+        if tick() - lastBlockPlace < 0.035 then return end
+        local wool, amount = getWool()
+        if not wool or (amount or 0) < 1 then return end
 
         lastBlockPlace = tick()
-        local placePosition = bedwars.BlockController:getBlockPosition(root.Position - Vector3.new(0, 4, 0)) * 3
-        return not getPlacedBlock(placePosition) and bedwars.placeBlock(placePosition, wool)
+        for _, placePosition in getBlockClutchPositions(root, humanoid, groundDistance) do
+            if not getPlacedBlock(placePosition) and bedwars.placeBlock(placePosition, wool) then
+                root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, math.max(root.AssemblyLinearVelocity.Y, -72), root.AssemblyLinearVelocity.Z)
+                return true
+            end
+        end
     end
 
     local function abilityClutch(item, ability, callback)
@@ -3333,9 +3360,9 @@ run(function()
         local groundDistance = ground and (root.Position.Y - ground.Position.Y) or math.huge
         lastLegitUse = now
 
-        if BlockClutch and BlockClutch.Enabled and (not ground or groundDistance <= 14) then
-            if blockClutch(root) then
-                clutchBusyUntil = tick() + 0.08
+        if BlockClutch and BlockClutch.Enabled and ground and groundDistance <= math.clamp(math.abs(root.AssemblyLinearVelocity.Y) * 0.3, 14, GroundDistance.Value) then
+            if blockClutch(root, humanoid, groundDistance) then
+                clutchBusyUntil = tick() + 0.035
                 return true
             end
         end
